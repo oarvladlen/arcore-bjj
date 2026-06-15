@@ -112,7 +112,9 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 
 ---
 
-## Auth (magic link)
+## Auth (e-mail + senha + confirmação)
+
+**Serviço:** [Supabase Auth](https://supabase.com/docs/guides/auth) — sem custo extra. E-mails de confirmação saem pelo mailer do Supabase (limite grátis) ou **SMTP customizado** (recomendado em produção: Resend, SendGrid, etc.) em **Authentication → Email Templates → SMTP**.
 
 **Dashboard → Authentication → URL Configuration**
 
@@ -122,9 +124,18 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 | Redirect URLs | `https://oarvladlen.github.io/arcore-bjj/**` |
 | | `http://localhost:8000/**` (local dev) |
 
-**Providers → Email:** enabled (magic link).
+**Confirm email:** Dashboard → Authentication → Providers → Email → **Confirm email** ON  
+(or run `SUPABASE_ACCESS_TOKEN=sbp_... node scripts/configure-supabase-auth.mjs`)
 
-### Invite users
+### Fluxo no app
+
+1. **Criar conta** — e-mail + senha → e-mail de confirmação  
+2. **Clicar no link** no e-mail → conta ativa  
+3. **Entrar** — e-mail + senha  
+4. **Aluno novo** — professor vincula `member_id` no `profiles` (ou convite com metadata)  
+5. **Esqueci senha** — link de redefinição por e-mail  
+
+### Convidar professor / aluno com perfil pronto
 
 **Authentication → Users → Invite**, with metadata:
 

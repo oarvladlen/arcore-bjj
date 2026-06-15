@@ -1,6 +1,7 @@
 /* =========================================================================
    Arcore — autenticação (Supabase Auth)
-   Magic link por e-mail. Perfil (role + member_id) vem da tabela profiles.
+   E-mail + senha com confirmação por e-mail. Perfil em `profiles`.
+   Serviço: Supabase Auth (e-mails via Supabase ou SMTP customizado).
    ========================================================================= */
 window.Arcore = window.Arcore || {};
 (function (A) {
@@ -12,6 +13,7 @@ window.Arcore = window.Arcore || {};
     session: null,
     profile: null,
     ready: false,
+    recoveryMode: false,
     listeners: [],
   });
 
@@ -34,6 +36,15 @@ window.Arcore = window.Arcore || {};
   auth.isCoach = function () { return auth.profile && auth.profile.role === 'coach'; };
   auth.getMemberId = function () { return auth.profile && auth.profile.member_id; };
 
+  auth.redirectTo = function () {
+    return (CFG.auth && CFG.auth.redirectUrl) ||
+      window.location.origin + window.location.pathname;
+  };
+
+  auth.isEmailConfirmed = function () {
+    return !!(auth.session && auth.session.user && auth.session.user.email_confirmed_at);
+  };
+
   function loadScript(src) {
     return new Promise((res, rej) => {
       if (document.querySelector('script[src="' + src + '"]')) { res(); return; }
@@ -45,12 +56,20 @@ window.Arcore = window.Arcore || {};
     });
   }
 
+  function detectRecovery() {
+    const hash = window.location.hash.replace(/^#/, '');
+    const q = new URLSearchParams(hash);
+    if (q.get('type') === 'recovery') auth.recoveryMode = true;
+  }
+
   auth.init = async function () {
     if (!auth.isEnabled()) { auth.ready = true; return auth; }
 
     if (!window.supabase) {
       await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
     }
+
+    detectRecovery();
 
     const sc = CFG.supabase;
     auth.client = window.supabase.createClient(sc.url, sc.anonKey, {
@@ -66,8 +85,9 @@ window.Arcore = window.Arcore || {};
     auth.session = session;
     if (session) await auth.loadProfile();
 
-    auth.client.auth.onAuthStateChange(async (_event, session) => {
+    auth.client.auth.onAuthStateChange(async (event, session) => {
       auth.session = session;
+      if (event === 'PASSWORD_RECOVERY') auth.recoveryMode = true;
       if (session) await auth.loadProfile();
       else auth.profile = null;
       auth.ready = true;
@@ -88,7 +108,6 @@ window.Arcore = window.Arcore || {};
       .single();
 
     if (error || !data) {
-      // Fallback: profile ainda não criou (trigger delay) — monta mínimo da sessão
       auth.profile = {
         id: uid,
         member_id: auth.session.user.user_metadata && auth.session.user.user_metadata.member_id,
@@ -102,21 +121,81 @@ window.Arcore = window.Arcore || {};
     return auth.profile;
   };
 
-  auth.signIn = async function (email) {
+  auth.signUp = async function (email, password) {
     if (!auth.client) throw new Error('Auth não configurado');
-    const redirectTo = CFG.auth.redirectUrl || window.location.origin + window.location.pathname;
-    const { error } = await auth.client.auth.signInWithOtp({
+    const { data, error } = await auth.client.auth.signUp({
       email: email.trim().toLowerCase(),
-      options: { emailRedirectTo: redirectTo },
+      password,
+      options: {
+        emailRedirectTo: auth.redirectTo(),
+        data: { role: 'member' },
+      },
     });
     if (error) throw error;
-    return true;
+    return data;
+  };
+
+  auth.signInPassword = async function (email, password) {
+    if (!auth.client) throw new Error('Auth não configurado');
+    const { data, error } = await auth.client.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (error.code === 'email_not_confirmed' || msg.includes('email not confirmed')) {
+        const e = new Error('Confirme seu e-mail antes de entrar.');
+        e.code = 'email_not_confirmed';
+        e.email = email.trim().toLowerCase();
+        throw e;
+      }
+      throw error;
+    }
+    if (data.user && !data.user.email_confirmed_at) {
+      await auth.client.auth.signOut();
+      const e = new Error('Confirme seu e-mail antes de entrar.');
+      e.code = 'email_not_confirmed';
+      e.email = email.trim().toLowerCase();
+      throw e;
+    }
+    return data;
+  };
+
+  auth.resendConfirmation = async function (email) {
+    if (!auth.client) throw new Error('Auth não configurado');
+    const { error } = await auth.client.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: auth.redirectTo() },
+    });
+    if (error) throw error;
+  };
+
+  auth.resetPasswordRequest = async function (email) {
+    if (!auth.client) throw new Error('Auth não configurado');
+    const { error } = await auth.client.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: auth.redirectTo() }
+    );
+    if (error) throw error;
+  };
+
+  auth.updatePassword = async function (password) {
+    if (!auth.client) throw new Error('Auth não configurado');
+    const { data, error } = await auth.client.auth.updateUser({ password });
+    if (error) throw error;
+    auth.recoveryMode = false;
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    return data;
   };
 
   auth.signOut = async function () {
     if (auth.client) await auth.client.auth.signOut();
     auth.session = null;
     auth.profile = null;
+    auth.recoveryMode = false;
     localStorage.removeItem('arcore.session');
     emit();
   };

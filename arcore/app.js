@@ -22,6 +22,7 @@
     home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     'trending-up':'<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
     lock:'<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    'key-round':'<path d="M2 18v3c0 .6.4 1 1 1h2a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10.5 2a6.5 6.5 0 0 0-3.2 12.2L9 18l6-6-1.8-1.8a6.5 6.5 0 0 0-2.7-8.2Z"/>',
     clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     award:'<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
     crown:'<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/>',
@@ -61,7 +62,11 @@
   const hourLabel = (iso) => { const d = new Date(iso); return d.getHours() + 'h' + String(d.getMinutes()).padStart(2, '0'); };
   const BELT_ORDER = ['branca', 'azul', 'roxa', 'marrom', 'preta'];
 
-  let state = { db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null, deferredPrompt: null, authPending: false, authSent: false };
+  let state = {
+    db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null,
+    deferredPrompt: null, authPending: false,
+    authView: 'signin', pendingEmail: '', unconfirmedEmail: '',
+  };
   let coachFilter = { q: '', seg: 'todos' };
   let rec = { mr: null, chunks: [], stream: null, timer: null, sec: 0, dataUrl: null };
 
@@ -425,7 +430,11 @@
   async function render() {
     renderChrome();
     const view = $('#view');
-    if (!state.session) { view.innerHTML = viewLogin(); return; }
+    if (!state.session) {
+      view.innerHTML = viewLogin();
+      renderChrome();
+      return;
+    }
     if (state.session.role === 'member') state.member = await state.db.getMember(state.memberId);
     let html = '';
     try {
@@ -461,61 +470,190 @@
   }
 
   function bindAuthForm() {
-    const form = $('#authform');
-    if (!form) return;
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = form.email.value.trim();
-      if (!email) return;
-      state.authPending = true;
-      render();
-      try {
-        await A.auth.signIn(email);
-        state.authSent = true;
-        toast('Link enviado! Confira seu e-mail', 'mail');
-      } catch (err) {
-        toast(err.message || 'Erro ao enviar link', 'alert');
-      } finally {
-        state.authPending = false;
+    const signin = $('#signinform');
+    const signup = $('#signupform');
+    const forgot = $('#forgotform');
+    const recovery = $('#recoveryform');
+
+    if (signin) {
+      signin.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        state.authPending = true;
         render();
-      }
-    });
+        try {
+          await A.auth.signInPassword(signin.email.value, signin.password.value);
+          toast('Bem-vindo de volta!', 'check');
+        } catch (err) {
+          if (err.code === 'email_not_confirmed') {
+            state.unconfirmedEmail = err.email || signin.email.value.trim();
+            state.authView = 'confirm-required';
+          } else {
+            toast(err.message || 'Erro ao entrar', 'alert');
+          }
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
+
+    if (signup) {
+      signup.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pw = signup.password.value;
+        const pw2 = signup.password2.value;
+        if (pw.length < 6) { toast('Senha: mínimo 6 caracteres', 'alert'); return; }
+        if (pw !== pw2) { toast('As senhas não coincidem', 'alert'); return; }
+        state.authPending = true;
+        render();
+        try {
+          state.pendingEmail = signup.email.value.trim();
+          await A.auth.signUp(state.pendingEmail, pw);
+          state.authView = 'confirm-sent';
+          toast('Conta criada! Confirme seu e-mail', 'mail');
+        } catch (err) {
+          toast(err.message || 'Erro ao criar conta', 'alert');
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
+
+    if (forgot) {
+      forgot.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        state.authPending = true;
+        render();
+        try {
+          await A.auth.resetPasswordRequest(forgot.email.value);
+          state.pendingEmail = forgot.email.value.trim();
+          state.authView = 'reset-sent';
+          toast('Link de redefinição enviado', 'mail');
+        } catch (err) {
+          toast(err.message || 'Erro ao enviar', 'alert');
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
+
+    if (recovery) {
+      recovery.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pw = recovery.password.value;
+        if (pw.length < 6) { toast('Senha: mínimo 6 caracteres', 'alert'); return; }
+        state.authPending = true;
+        render();
+        try {
+          await A.auth.updatePassword(pw);
+          A.auth.recoveryMode = false;
+          state.authView = 'signin';
+          toast('Senha atualizada! Entre com a nova senha', 'check');
+        } catch (err) {
+          toast(err.message || 'Erro ao salvar senha', 'alert');
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
   }
 
   function authEnabled() { return A.auth && A.auth.isEnabled && A.auth.isEnabled(); }
 
-  function viewLogin() {
+  function authShell(title, inner) {
     const mode = A.mode === 'supabase'
-      ? (authEnabled() ? 'Nuvem · login seguro' : 'Conectado à nuvem (Supabase)')
-      : 'Modo local · dados de demonstração neste aparelho';
+      ? (authEnabled() ? 'Supabase Auth · e-mail confirmado' : 'Conectado à nuvem')
+      : 'Modo local · demonstração';
+    return '<div class="login"><div class="logo">AR<span>CO</span>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
+      (title ? '<h2>' + title + '</h2>' : '') + inner +
+      '<div class="modeline">' + icon('lock', 12) + ' ' + mode + '</div></div>';
+  }
 
-    if (authEnabled()) {
-      if (state.authSent) {
-        return '<div class="login"><div class="logo">AR<span>CO</span>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
-          '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
-          '<h2>Confira seu e-mail</h2>' +
-          '<p class="authtxt">Enviamos um link mágico. Toque nele neste aparelho para entrar.</p>' +
-          '<button class="btn sec full" data-act="auth-back">' + icon('chevron-left', 16) + ' Usar outro e-mail</button></div>' +
-          '<div class="modeline">' + icon('lock', 12) + ' ' + mode + '</div></div>';
-      }
-      return '<div class="login"><div class="logo">AR<span>CO</span>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
-        '<h2>Entrar na academia</h2>' +
-        '<form id="authform" class="authcard">' +
-        '<label class="authlabel">Seu e-mail</label>' +
-        '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com" inputmode="email">' +
-        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
-        icon('send', 17) + ' ' + (state.authPending ? 'Enviando...' : 'Enviar link de acesso') + '</button>' +
-        '<p class="authtxt">Sem senha — você recebe um link seguro por e-mail.</p></form>' +
-        '<div class="modeline">' + icon('lock', 12) + ' ' + mode + '</div></div>';
+  function authField(label, input) {
+    return '<label class="authlabel">' + label + '</label>' + input;
+  }
+
+  function viewLogin() {
+    if (!authEnabled()) {
+      return authShell('Quem está entrando?',
+        '<button class="rolebtn member" data-act="login-member"><div class="ic">' + icon('user', 24) + '</div>' +
+        '<div><div class="t">Sou Aluno</div><div class="d">Feed, progressão, selos e ranking</div></div></button>' +
+        '<button class="rolebtn coach" data-act="login-coach"><div class="ic">' + icon('crown', 24) + '</div>' +
+        '<div><div class="t">Sou Professor</div><div class="d">CRM, postar técnicas e dar selos</div></div></button>');
     }
 
-    return '<div class="login"><div class="logo">AR<span>CO</span>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
-      '<h2>Quem está entrando?</h2>' +
-      '<button class="rolebtn member" data-act="login-member"><div class="ic">' + icon('user', 24) + '</div>' +
-      '<div><div class="t">Sou Aluno</div><div class="d">Feed, progressão, selos e ranking</div></div></button>' +
-      '<button class="rolebtn coach" data-act="login-coach"><div class="ic">' + icon('crown', 24) + '</div>' +
-      '<div><div class="t">Sou Professor</div><div class="d">CRM, postar técnicas e dar selos</div></div></button>' +
-      '<div class="modeline">' + icon('refresh', 12) + ' ' + mode + '</div></div>';
+    if (A.auth.recoveryMode) {
+      return authShell('Nova senha',
+        '<form id="recoveryform" class="authcard">' +
+        authField('Nova senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
+        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
+        icon('key-round', 17) + ' Salvar nova senha</button></form>');
+    }
+
+    if (state.authView === 'confirm-sent' || state.authView === 'reset-sent') {
+      const isReset = state.authView === 'reset-sent';
+      return authShell(null,
+        '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
+        '<h2>' + (isReset ? 'Link enviado' : 'Confirme seu e-mail') + '</h2>' +
+        '<p class="authtxt">' + (isReset
+          ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>. Abra-o para redefinir sua senha.'
+          : 'Enviamos um link de confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique nele e depois entre com sua senha.') +
+        '</p><button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Voltar ao login</button></div>');
+    }
+
+    if (state.authView === 'confirm-required') {
+      const em = state.unconfirmedEmail || state.pendingEmail;
+      return authShell(null,
+        '<div class="authcard"><div class="authicon">' + icon('alert', 28) + '</div>' +
+        '<h2>E-mail não confirmado</h2>' +
+        '<p class="authtxt">Confirme <b>' + esc(em) + '</b> antes de entrar. Verifique spam/lixo eletrônico.</p>' +
+        '<button class="btn full" data-act="auth-resend" style="margin-top:14px">' + icon('mail', 17) + ' Reenviar confirmação</button>' +
+        '<button class="btn sec full" data-act="auth-signin" style="margin-top:10px">' + icon('chevron-left', 16) + ' Voltar</button></div>');
+    }
+
+    if (state.authView === 'pending-link') {
+      return authShell(null,
+        '<div class="authcard"><div class="authicon">' + icon('user', 28) + '</div>' +
+        '<h2>Conta confirmada</h2>' +
+        '<p class="authtxt">Seu e-mail está ok. O professor ainda precisa vincular seu perfil de aluno na academia — avise no tatame.</p>' +
+        '<button class="btn sec full" data-act="logout" style="margin-top:14px">' + icon('log-out', 17) + ' Sair</button></div>');
+    }
+
+    if (state.authView === 'forgot') {
+      return authShell('Recuperar senha',
+        '<form id="forgotform" class="authcard">' +
+        authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
+        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
+        icon('mail', 17) + ' Enviar link</button>' +
+        '<button type="button" class="authlink" data-act="auth-signin">Voltar ao login</button></form>');
+    }
+
+    const isSignup = state.authView === 'signup';
+    const tabs = '<div class="authtabs">' +
+      '<button type="button" class="authtab ' + (isSignup ? '' : 'on') + '" data-act="auth-signin">Entrar</button>' +
+      '<button type="button" class="authtab ' + (isSignup ? 'on' : '') + '" data-act="auth-signup">Criar conta</button></div>';
+
+    if (isSignup) {
+      return authShell('Junte-se à academia', tabs +
+        '<form id="signupform" class="authcard">' +
+        authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
+        authField('Senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
+        authField('Confirmar senha', '<input class="input" name="password2" type="password" required minlength="6" autocomplete="new-password" placeholder="Repita a senha">') +
+        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
+        icon('user', 17) + ' ' + (state.authPending ? 'Criando...' : 'Criar conta') + '</button>' +
+        '<p class="authtxt">Você receberá um e-mail de confirmação antes de entrar.</p></form>');
+    }
+
+    return authShell('Entrar na academia', tabs +
+      '<form id="signinform" class="authcard">' +
+      authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
+      authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
+      '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
+      icon('lock', 17) + ' ' + (state.authPending ? 'Entrando...' : 'Entrar') + '</button>' +
+      '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>');
   }
 
   /* =====================================================================
@@ -531,7 +669,15 @@
       case 'nav': setScreen(arg); break;
       case 'login-member': await setSession('member', state.memberId); break;
       case 'login-coach': await setSession('coach', null); break;
-      case 'auth-back': state.authSent = false; render(); break;
+      case 'auth-signin': state.authView = 'signin'; state.unconfirmedEmail = ''; render(); break;
+      case 'auth-signup': state.authView = 'signup'; render(); break;
+      case 'auth-forgot': state.authView = 'forgot'; render(); break;
+      case 'auth-resend':
+        try {
+          await A.auth.resendConfirmation(state.unconfirmedEmail || state.pendingEmail);
+          toast('Confirmação reenviada', 'mail');
+        } catch (err) { toast(err.message || 'Erro ao reenviar', 'alert'); }
+        break;
       case 'persona': openPersona(); break;
       case 'switchto': if (!authEnabled()) { closeSheet(); await setSession(arg, state.memberId); } break;
       case 'logout': closeSheet(); await doLogout(); break;
@@ -766,26 +912,39 @@
   }
 
   async function applyAuthSession() {
+    if (A.auth.recoveryMode) {
+      state.session = null;
+      state.authView = 'recovery';
+      return false;
+    }
+    const user = A.auth.session && A.auth.session.user;
+    if (!user) return false;
+    if (!user.email_confirmed_at) {
+      state.unconfirmedEmail = user.email || '';
+      state.authView = 'confirm-required';
+      return false;
+    }
     const p = A.auth.profile;
     if (!p) return false;
     const role = p.role === 'coach' ? 'coach' : 'member';
-    if (role === 'member') {
-      if (!p.member_id) {
-        toast('Conta sem aluno vinculado — fale com o professor', 'alert');
-        return false;
-      }
-      state.memberId = p.member_id;
+    if (role === 'member' && !p.member_id) {
+      state.authView = 'pending-link';
+      state.session = null;
+      return false;
     }
+    if (role === 'member') state.memberId = p.member_id;
     state.session = { role, memberId: p.member_id, userId: p.id, email: p.email };
     state.screen = role === 'coach' ? 'painel' : 'inicio';
-    state.authSent = false;
+    state.authView = 'signin';
     return true;
   }
 
   async function doLogout() {
     if (authEnabled()) await A.auth.signOut();
     state.session = null;
-    state.authSent = false;
+    state.authView = 'signin';
+    state.pendingEmail = '';
+    state.unconfirmedEmail = '';
     localStorage.removeItem('arcore.session');
     render();
   }
@@ -804,10 +963,18 @@
 
     if (authEnabled()) {
       A.auth.onChange(async () => {
+        if (A.auth.recoveryMode) {
+          state.session = null;
+          state.authView = 'recovery';
+          await render();
+          return;
+        }
         if (A.auth.session && A.auth.profile) {
           const ok = await applyAuthSession();
           if (ok) {
             state.db = await A.createDB();
+            await render();
+          } else {
             await render();
           }
         } else if (!A.auth.session) {
@@ -815,7 +982,11 @@
           await render();
         }
       });
-      if (A.auth.session) await applyAuthSession();
+      if (A.auth.recoveryMode) {
+        state.authView = 'recovery';
+      } else if (A.auth.session) {
+        await applyAuthSession();
+      }
     } else {
       try {
         const saved = JSON.parse(localStorage.getItem('arcore.session') || 'null');

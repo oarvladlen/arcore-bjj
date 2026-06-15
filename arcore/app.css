@@ -271,6 +271,14 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 .authlabel{display:block;font-weight:700;font-size:12px;color:var(--muted);margin-bottom:8px;letter-spacing:.04em}
 .authtxt{color:var(--muted);font-size:12.5px;line-height:1.45;margin-top:12px;text-align:center}
 .authcard .input{width:100%;margin-bottom:14px}
+.authtabs{display:flex;gap:8px;margin-bottom:14px}
+.authtab{flex:1;padding:11px;border-radius:12px;border:1px solid var(--line2);background:var(--surface);
+  color:var(--muted);font-weight:700;font-size:13px;cursor:pointer}
+.authtab.on{background:var(--ember-soft);border-color:rgba(234,90,44,.35);color:var(--text)}
+.authlink{display:block;width:100%;margin-top:12px;background:none;border:none;color:var(--ember);
+  font-weight:700;font-size:13px;cursor:pointer;text-align:center;padding:8px}
+.authlink:hover{text-decoration:underline}
+.authtxt b{color:var(--text);font-weight:700}
 
 /* nav */
 .nav{position:absolute;bottom:0;left:0;right:0;z-index:5;display:flex;background:rgba(18,13,8,.94);backdrop-filter:blur(8px);
