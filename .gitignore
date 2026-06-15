@@ -16,7 +16,6 @@ __pycache__/
 *.pyc
 .venv/
 
-# Env local (referência)
 .env
 .env.local
 .env.*.local

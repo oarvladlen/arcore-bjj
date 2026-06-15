@@ -10,7 +10,7 @@ const example = join(root, 'config.example.js');
 const out = join(root, 'config.js');
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const redirect = process.env.AUTH_REDIRECT_URL || process.env.URL || '';
 
 let base;
@@ -33,7 +33,7 @@ if (redirect) {
 
 // Ativa auth quando há chaves Supabase
 if (url && key) {
-  cfg = cfg.replace(/enabled:\s*false/, 'enabled: true');
+  cfg = cfg.replace(/(auth:\s*\{[\s\S]*?enabled:\s*)false/, '$1true');
 }
 
 writeFileSync(out, cfg);

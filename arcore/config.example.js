@@ -16,8 +16,8 @@ window.ARCORE_CONFIG = {
   },
 
   supabase: {
-    url: '',       // https://xxxxxxxx.supabase.co
-    anonKey: '',   // eyJhbGciOi...
+    url: '',       // https://xxxx.supabase.co
+    anonKey: '',   // sb_publishable_... or legacy eyJ... anon JWT
   },
 
   // Auth: ativo automaticamente quando supabase está configurado.

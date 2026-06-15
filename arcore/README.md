@@ -120,7 +120,8 @@ arcore/
 ├── sw.js                   # service worker
 ├── netlify.toml            # deploy Netlify
 ├── vercel.json             # deploy Vercel
-├── DEPLOY.md               # guia de produção ← leia aqui
+├── DEPLOY.md               # guia de produção
+├── CONNECTION.md           # credenciais + setup Supabase ← leia aqui
 ├── scripts/
 │   └── inject-config.mjs   # gera config.js a partir de env vars
 ├── supabase/
