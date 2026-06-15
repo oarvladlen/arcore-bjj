@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#16110C" />
+<meta name="description" content="App da academia Arcore — Jiu-Jítsu. Feed de técnicas, check-in, progressão de faixa, selos e ranking, com CRM para o professor." />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Arcore" />
+<title>Arcore · Jiu-Jítsu</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="wrap">
+  <div class="app">
+    <header class="hdr" id="hdr"></header>
+    <main class="body" id="view"></main>
+    <nav class="nav" id="nav"></nav>
+    <div class="toast" id="toast"></div>
+    <div id="scrim-root"></div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

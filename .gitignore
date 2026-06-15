@@ -1,0 +1,22 @@
+# Secrets gerados no deploy — não commitar
+arcore/config.js
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Python (tools)
+__pycache__/
+*.pyc
+.venv/
+
+# Env local (referência)
+.env
+.env.local
+.env.*.local
