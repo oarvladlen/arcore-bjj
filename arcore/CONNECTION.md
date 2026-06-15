@@ -39,6 +39,42 @@ Region may differ — confirm under **Database → Connection string**.
 
 ---
 
+## Why `/rest/v1/` is not enough
+
+The URL `https://acoilxssyjmwmmbaoytp.supabase.co/rest/v1/` is **PostgREST** — it only reads/writes **existing** tables (`GET /members`, `POST /checkins`, etc.).
+
+It **cannot** run migrations (`CREATE TABLE`, RLS policies, triggers). Hitting the root returns:
+
+```json
+{ "message": "Secret API key required" }
+```
+
+That endpoint is the OpenAPI schema browser, not an admin console.
+
+| Credential | Can create tables? | What you gave |
+|------------|-------------------|---------------|
+| Publishable key `sb_publishable_...` | No — client API only | Yes |
+| REST `/rest/v1/` | No — needs tables first | — |
+| Database password + `psql` | **Yes** | Placeholder only `[YOUR-PASSWORD]` |
+| Access token `sbp_...` + Management API | **Yes** | Not provided |
+| `supabase login` + `db push` | **Yes** | Not logged in on this machine |
+
+To let automation apply schema, provide **one** of:
+
+1. **Access token** — https://supabase.com/dashboard/account/tokens → then:
+   ```bash
+   export SUPABASE_ACCESS_TOKEN=sbp_...
+   node scripts/apply-schema-api.mjs
+   ```
+2. **Database password** — Dashboard → Settings → Database:
+   ```bash
+   export PGPASSWORD='...'
+   psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" -f arcore/supabase/schema.sql
+   psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" -f arcore/supabase/schema-auth.sql
+   ```
+
+---
+
 ## Apply database schema (required once)
 
 Tables are **not** created until you run the SQL. Choose one method:
@@ -71,6 +107,8 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 ```
 
 **Verify:** in SQL Editor run `select count(*) from members;` — should return `10`.
+
+> **Status:** Schema applied via Management API. Auth redirect URLs set to `https://oarvladlen.github.io/arcore-bjj/**`.
 
 ---
 
@@ -187,8 +225,9 @@ supabase projects api-keys --project-ref acoilxssyjmwmmbaoytp
 
 ## Security checklist
 
-- [ ] Schema + auth SQL applied  
-- [ ] Auth redirect URLs configured  
-- [ ] GitHub secrets set (no secrets in git)  
+- [x] Schema + auth SQL applied  
+- [x] Auth redirect URLs configured  
+- [x] GitHub secrets set (no secrets in git)  
 - [ ] Secret key (`sb_secret_...`) only on server — never in `config.js`  
-- [ ] Database password only in password manager / CI, not in repo
+- [ ] Database password only in password manager / CI, not in repo  
+- [ ] Rotate any access tokens shared in chat
