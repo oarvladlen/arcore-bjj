@@ -437,7 +437,7 @@
     if (!state.session) { hdr.style.display = 'none'; nav.style.display = 'none'; return; }
     hdr.style.display = ''; nav.style.display = '';
     const isCoach = state.session.role === 'coach';
-    const brand = '<div class="brand">AR<span>CO</span>RE<small>' + esc(CFG.gym.tagline || '') + '</small></div>';
+    const brand = '<div class="brand">ARC<i class="om"></i>RE<small>' + esc(CFG.gym.tagline || '') + '</small></div>';
     let right = '<div class="hdr-right">';
     if (!isCoach && state.member) {
       right += '<div class="streakchip">' + icon('flame', 15) + ' ' + state.member.streak_weeks + ' sem</div>';
@@ -777,7 +777,7 @@
     const mode = A.mode === 'supabase'
       ? (authEnabled() ? 'Supabase Auth · e-mail confirmado' : 'Conectado à nuvem')
       : 'Modo local · demonstração';
-    return '<div class="login"><div class="logo">AR<span>CO</span>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
+    return '<div class="login"><div class="logo">ARC<i class="om"></i>RE</div><div class="tl">' + esc(CFG.gym.tagline || '') + '</div>' +
       (title ? '<h2>' + title + '</h2>' : '') + inner +
       '<div class="modeline">' + icon('lock', 12) + ' ' + mode + '</div></div>';
   }
