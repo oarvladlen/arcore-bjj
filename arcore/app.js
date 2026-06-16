@@ -105,6 +105,25 @@
     return 'https://wa.me/' + digits + '?text=' + encodeURIComponent(text);
   }
 
+  /** Opt-in bar for web push — shows only when it can actually work. */
+  function pushBar() {
+    if (!(A.push && A.push.available && A.push.available())) return '';
+    if (A.push.permission() !== 'default') return '';
+    try { if (localStorage.getItem('arcore.push.dismiss')) return ''; } catch (e) { /* ignore */ }
+    return '<div class="installbar push">' + icon('bell', 18) +
+      '<div class="g"><b>Ative as notificações</b> — técnica nova e selos na hora</div>' +
+      '<button class="btn sm" data-act="push-enable">Ativar</button>' +
+      '<button class="barx" data-act="push-dismiss" aria-label="Dispensar">' + icon('x', 15) + '</button></div>';
+  }
+  async function doPushEnable() {
+    const r = await A.push.enable();
+    if (r.ok) toast('Notificações ativadas 🔔', 'bell');
+    else if (r.reason === 'denied') toast('Permissão negada — ative nas configurações do navegador.', 'alert');
+    else if (r.reason === 'unsupported') toast('Notificações não suportadas neste aparelho.', 'alert');
+    else toast('Não foi possível ativar agora.', 'alert');
+    render();
+  }
+
   /* =====================================================================
      MEMBER VIEWS
      ===================================================================== */
@@ -140,6 +159,7 @@
         '<div class="g"><b>Instale o app</b> na tela inicial</div>' +
         '<button class="btn sm" data-act="install">Instalar</button></div>';
     }
+    h += pushBar();
 
     h += '<div class="eyebrow">' + icon('play', 13) + ' No tatame · sessões' +
       (saved.length ? '<span class="more" data-act="saved">Salvos (' + saved.length + ')</span>' : '') + '</div>';
@@ -275,6 +295,7 @@
     const [s, atRisk, slots] = await Promise.all([db.coachStats(), db.atRiskMembers(), db.listTodayClasses()]);
     let h = '<section class="screen">';
     h += '<p class="hello">Olá, <b>' + esc(firstName(COACH.name)) + '</b> — sua academia hoje.</p>';
+    h += pushBar();
     h += '<div class="statgrid">' +
       statcard(s.ativos, 'Alunos ativos', 'ok', 'users') +
       statcard(s.experimentais, 'Experimentais', 'gold', 'sparkles') +
@@ -1032,6 +1053,8 @@
       case 'delgoal': await doDeleteGoal(arg); break;
       case 'presslot': state.presSlot = arg; render(); break;
       case 'verify': await doVerify(arg); break;
+      case 'push-enable': await doPushEnable(); break;
+      case 'push-dismiss': try { localStorage.setItem('arcore.push.dismiss', '1'); } catch (e) { /* ignore */ } render(); break;
       default: break;
     }
   }
@@ -1444,6 +1467,10 @@
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Keep an already-granted device subscribed (re-saves on each login).
+      if (A.push && A.push.available && A.push.available() && A.push.permission() === 'granted' && state.session) {
+        A.push.enable().catch(() => {});
+      }
     }
   }
 

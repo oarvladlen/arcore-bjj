@@ -628,7 +628,12 @@ window.Arcore = window.Arcore || {};
     }
     const row = Object.assign({}, data, { voice_note: voice, at: util.nowISO(), likes: 0, liked_by: [], saved_by: [] });
     const { data: ins } = await this.sb.from('posts').insert(row).select().single();
+    this._push({ audience: 'members', title: 'Nova técnica no app 🥋', body: (ins && ins.title) || data.title || '', url: './', tag: 'tecnica' });
     return ins;
+  };
+  /* Fire-and-forget web push via the push-send edge function. Never blocks. */
+  SB._push = function (body) {
+    try { this.sb.functions.invoke('push-send', { body }).catch(() => {}); } catch (e) { /* ignore */ }
   };
   SB.toggleSave = async function (memberId, postId) {
     const p = (await this.sb.from('posts').select('saved_by').eq('id', postId).single()).data || { saved_by: [] };
@@ -653,6 +658,8 @@ window.Arcore = window.Arcore || {};
   SB.awardBadge = async function (memberId, badgeId, by) {
     const { data } = await this.sb.from('awards').insert({ member_id: memberId, badge_id: badgeId, by: by || 'Professor', at: util.nowISO(), reactions: 0, reacted_by: [] }).select().single();
     const m = await this.getMember(memberId); if (m) await this.updateMember(memberId, { xp: m.xp + 100, week_xp: m.week_xp + 100 });
+    const b = (await this.sb.from('badges').select('name').eq('id', badgeId).single()).data;
+    this._push({ audience: 'member', member_id: memberId, title: 'Novo selo! 🏅', body: (b && b.name) ? ('Você ganhou "' + b.name + '"') : 'Você foi reconhecido pelo professor', url: './', tag: 'selo' });
     return data;
   };
   SB.toggleAwardReaction = async function (awardId, memberId) {

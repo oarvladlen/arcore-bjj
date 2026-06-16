@@ -1,13 +1,38 @@
-/* Arcore service worker — offline app shell */
-const VERSION = 'arcore-v19';
+/* Arcore service worker — offline app shell + web push */
+const VERSION = 'arcore-v20';
 const SHELL = [
   './',
   './index.html',
-  './app.css?v=19',
+  './app.css?v=20',
   './icon.svg',
   './icon-maskable.svg',
   './manifest.webmanifest',
 ];
+
+/* ---- Web Push: show notification + focus app on click ---- */
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data && e.data.text() }; }
+  const title = d.title || 'Arcore';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '',
+    icon: d.icon || './icon-192.png',
+    badge: './icon-192.png',
+    tag: d.tag || undefined,
+    renotify: !!d.tag,
+    data: { url: d.url || './' },
+    vibrate: [60, 30, 60],
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+    for (const c of cs) { if ('focus' in c) { c.navigate && c.navigate(url); return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
+});
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

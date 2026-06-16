@@ -409,3 +409,10 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 .slotmini span{font-size:12px;font-weight:800;color:var(--faint)}
 .slotmini.has b{color:var(--text)}
 .slotmini.has span{color:var(--ember)}
+
+/* push opt-in bar */
+.installbar.push{background:var(--ember-soft);border-color:rgba(229,28,36,.3)}
+.installbar svg{color:var(--ember);flex:none}
+.installbar .barx{background:transparent;border:none;color:var(--faint);display:grid;place-items:center;
+  width:26px;height:26px;border-radius:8px;cursor:pointer;flex:none}
+.installbar .barx:hover{color:var(--text)}

@@ -55,4 +55,10 @@ window.ARCORE_CONFIG = {
       { time: '11:00', label: 'Treino' },
     ],
   },
+
+  // Web Push (PWA). vapidPublic é público (pode commitar). A chave privada
+  // fica como secret da edge function push-send (NUNCA no cliente).
+  push: {
+    vapidPublic: 'BDeAUBNwx9gk69OI7kLruoFodittW1fUvgr0kddgaJGPxUcf42hFjqJGFzFpf6yyzXAr1578Y0K-3DlQAhzaLJc',
+  },
 };
