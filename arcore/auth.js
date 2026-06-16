@@ -214,6 +214,11 @@ window.Arcore = window.Arcore || {};
     return data;
   };
 
+  auth.signInCoach = async function (password) {
+    const email = (CFG.coach && CFG.coach.email) || 'professor@arcore.com';
+    return auth.signInPassword(email, password, 'coach');
+  };
+
   auth.signInPassword = async function (email, password, expectRole) {
     if (!auth.client) throw new Error('Auth não configurado');
     const { data, error } = await auth.client.auth.signInWithPassword({

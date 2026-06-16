@@ -130,14 +130,16 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 ### Fluxo no app
 
 **Professor**
-1. Aba **Professor** → e-mail + senha (conta criada no Supabase com `role: coach`)
-2. **Alunos → Adicionar aluno** → nome, e-mail, celular (WhatsApp)
-3. Aluno recebe e-mail de convite + professor pode enviar link no WhatsApp
+1. Link secreto (não aparece no login público): `https://oarvladlen.github.io/arcore-bjj/?mestre=1`
+2. Só **senha** — o e-mail fica oculto (`professor@arcore.com` em `config.coach.email`)
+3. **Alunos → Adicionar aluno** → nome, e-mail, celular (WhatsApp)
+4. Aluno recebe e-mail de convite + professor pode enviar link no WhatsApp
 
-**Aluno (convite)**
-1. Clica no link do e-mail ou WhatsApp (`?invite=TOKEN`)
-2. Confirma celular → cria senha → aceita avisos WA/e-mail
-3. Confirma e-mail → entra no app
+**Aluno**
+1. Login normal: e-mail + senha (sem aba de professor)
+2. Primeira vez: clica no link do convite (`?invite=TOKEN`)
+3. Confirma celular → cria senha → aceita avisos WA/e-mail
+4. Confirma e-mail → entra no app
 
 **Serviço de e-mail:** Supabase Auth (grátis) ou SMTP customizado (Resend, SendGrid) para marketing em escala.
 

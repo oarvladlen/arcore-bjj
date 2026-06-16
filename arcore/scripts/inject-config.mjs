@@ -31,6 +31,11 @@ if (redirect) {
   cfg = cfg.replace(/redirectUrl:\s*''/, "redirectUrl: '" + redirect.replace(/'/g, "\\'") + "'");
 }
 
+const coachEmail = process.env.COACH_EMAIL || '';
+if (coachEmail) {
+  cfg = cfg.replace(/email:\s*'professor@arcore\.com'/, "email: '" + coachEmail.replace(/'/g, "\\'") + "'");
+}
+
 // Ativa auth quando há chaves Supabase
 if (url && key) {
   cfg = cfg.replace(/(auth:\s*\{[\s\S]*?enabled:\s*)false/, '$1true');

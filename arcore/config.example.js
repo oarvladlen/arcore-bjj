@@ -21,10 +21,15 @@ window.ARCORE_CONFIG = {
   },
 
   // Auth: ativo automaticamente quando supabase está configurado.
-  // enabled: false força modo demo mesmo com Supabase (só dev).
   auth: {
     enabled: false,
-    redirectUrl: '',  // ex.: https://arcore.netlify.app/ (opcional)
+    redirectUrl: '',
+  },
+
+  // Professor: link secreto ?mestre=1 → só senha (e-mail oculto no backend)
+  coach: {
+    gate: 'mestre',              // https://seu-app/?mestre=1
+    email: 'professor@arcore.com',
   },
 
   rules: {

@@ -65,7 +65,7 @@
   let state = {
     db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null,
     deferredPrompt: null, authPending: false,
-    authView: 'signin', loginPortal: 'student', pendingEmail: '', unconfirmedEmail: '',
+    authView: 'signin', coachGate: false, pendingEmail: '', unconfirmedEmail: '',
   };
   let coachFilter = { q: '', seg: 'todos' };
   let rec = { mr: null, chunks: [], stream: null, timer: null, sec: 0, dataUrl: null };
@@ -474,6 +474,7 @@
 
   function needsAuthScreen() {
     if (!authEnabled()) return !state.session;
+    if (state.coachGate && (!state.session || state.session.role !== 'coach')) return true;
     if (A.auth.recoveryMode) return true;
     if (A.auth.inviteMode && A.auth.session) return true;
     if (state.authView === 'pending-link') return true;
@@ -493,17 +494,34 @@
     const forgot = $('#forgotform');
     const recovery = $('#recoveryform');
     const inviteComplete = $('#invitecompleteform');
+    const coachpass = $('#coachpassform');
     const addStu = $('#addstudentform');
+
+    if (coachpass) {
+      coachpass.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        state.authPending = true;
+        render();
+        try {
+          await A.auth.signInCoach(coachpass.password.value);
+          toast('Bem-vindo, professor!', 'crown');
+        } catch (err) {
+          toast(err.message || 'Senha incorreta', 'alert');
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
 
     if (signin) {
       signin.addEventListener('submit', async (e) => {
         e.preventDefault();
         state.authPending = true;
         render();
-        const expect = state.loginPortal === 'coach' ? 'coach' : 'member';
         try {
-          await A.auth.signInPassword(signin.email.value, signin.password.value, expect);
-          toast(expect === 'coach' ? 'Bem-vindo, professor!' : 'Bem-vindo de volta!', 'check');
+          await A.auth.signInPassword(signin.email.value, signin.password.value, 'member');
+          toast('Bem-vindo de volta!', 'check');
         } catch (err) {
           if (err.code === 'email_not_confirmed') {
             state.unconfirmedEmail = err.email || signin.email.value.trim();
@@ -645,6 +663,20 @@
 
   function authEnabled() { return A.auth && A.auth.isEnabled && A.auth.isEnabled(); }
 
+  function coachGateKey() { return (CFG.coach && CFG.coach.gate) || 'mestre'; }
+
+  function detectCoachGate() {
+    const q = new URLSearchParams(window.location.search);
+    state.coachGate = q.get(coachGateKey()) === '1';
+  }
+
+  function coachGateUrl() {
+    const base = (CFG.auth && CFG.auth.redirectUrl) ||
+      window.location.origin + window.location.pathname;
+    const sep = base.includes('?') ? '&' : '?';
+    return base + sep + coachGateKey() + '=1';
+  }
+
   function authShell(title, inner) {
     const mode = A.mode === 'supabase'
       ? (authEnabled() ? 'Supabase Auth · e-mail confirmado' : 'Conectado à nuvem')
@@ -658,13 +690,6 @@
     return '<label class="authlabel">' + label + '</label>' + input;
   }
 
-  function portalTabs() {
-    const stu = state.loginPortal !== 'coach';
-    return '<div class="portal">' +
-      '<button type="button" class="portalbtn ' + (stu ? 'on' : '') + '" data-act="portal:student">' + icon('user', 16) + ' Aluno</button>' +
-      '<button type="button" class="portalbtn ' + (!stu ? 'on' : '') + '" data-act="portal:coach">' + icon('crown', 16) + ' Professor</button></div>';
-  }
-
   function viewLogin() {
     if (!authEnabled()) {
       return authShell('Quem está entrando?',
@@ -672,6 +697,13 @@
         '<div><div class="t">Sou Aluno</div><div class="d">Feed, progressão, selos e ranking</div></div></button>' +
         '<button class="rolebtn coach" data-act="login-coach"><div class="ic">' + icon('crown', 24) + '</div>' +
         '<div><div class="t">Sou Professor</div><div class="d">CRM, postar técnicas e dar selos</div></div></button>');
+    }
+
+    if (state.coachGate && !A.auth.recoveryMode) {
+      return authShell('Área do professor',
+        '<form id="coachpassform" class="authcard">' +
+        authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Senha do professor" autofocus>') +
+        '<button class="btn gold full" type="submit">' + icon('crown', 17) + ' Entrar</button></form>');
     }
 
     if (A.auth.recoveryMode) {
@@ -696,7 +728,7 @@
 
     if (state.authView === 'confirm-sent' || state.authView === 'reset-sent') {
       const isReset = state.authView === 'reset-sent';
-      return authShell(null, portalTabs() +
+      return authShell(null,
         '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
         '<h2>' + (isReset ? 'Link enviado' : 'Confirme seu e-mail') + '</h2>' +
         '<p class="authtxt">' + (isReset
@@ -707,7 +739,7 @@
 
     if (state.authView === 'confirm-required') {
       const em = state.unconfirmedEmail || state.pendingEmail;
-      return authShell(null, portalTabs() +
+      return authShell(null,
         '<div class="authcard"><div class="authicon">' + icon('alert', 28) + '</div>' +
         '<h2>E-mail não confirmado</h2>' +
         '<p class="authtxt">Confirme <b>' + esc(em) + '</b> antes de entrar.</p>' +
@@ -716,7 +748,7 @@
     }
 
     if (state.authView === 'pending-link') {
-      return authShell(null, portalTabs() +
+      return authShell(null,
         '<div class="authcard"><div class="authicon">' + icon('alert', 28) + '</div>' +
         '<h2>Perfil pendente</h2>' +
         '<p class="authtxt">Conta ok, mas falta vínculo com a academia. Fale com o professor.</p>' +
@@ -724,18 +756,17 @@
     }
 
     if (state.authView === 'forgot') {
-      return authShell('Recuperar senha', portalTabs() +
+      return authShell('Recuperar senha',
         '<form id="forgotform" class="authcard">' +
         authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
         '<button class="btn full" type="submit">' + icon('mail', 17) + ' Enviar link</button>' +
         '<button type="button" class="authlink" data-act="auth-signin">Voltar ao login</button></form>');
     }
 
-    const isCoach = state.loginPortal === 'coach';
     const inv = A.auth.inviteData;
 
-    if (!isCoach && (state.authView === 'signup' || inv) && inv && inv.valid) {
-      return authShell('Bem-vindo à Arcore', portalTabs() +
+    if ((state.authView === 'signup' || inv) && inv && inv.valid) {
+      return authShell('Bem-vindo à Arcore',
         '<p class="authtxt" style="margin-bottom:12px">Oi <b>' + esc(firstName(inv.name)) + '</b>! Crie sua senha — leva 30 segundos.</p>' +
         '<form id="signupform" class="authcard">' +
         authField('E-mail', '<input class="input" name="email" type="email" readonly value="' + esc(inv.email) + '">') +
@@ -746,16 +777,7 @@
         '<p class="authtxt">Depois confirme o e-mail que vamos mandar.</p></form>');
     }
 
-    if (isCoach) {
-      return authShell('Área do professor', portalTabs() +
-        '<form id="signinform" class="authcard">' +
-        authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="professor@academia.com">') +
-        authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
-        '<button class="btn gold full" type="submit">' + icon('crown', 17) + ' Entrar como professor</button>' +
-        '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>');
-    }
-
-    return authShell('Entrar', portalTabs() +
+    return authShell('Entrar',
       '<form id="signinform" class="authcard">' +
       authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com">') +
       authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
@@ -792,7 +814,6 @@
       case 'login-coach': await setSession('coach', null); break;
       case 'auth-signin': state.authView = 'signin'; state.unconfirmedEmail = ''; render(); break;
       case 'auth-signup': state.authView = 'signup'; render(); break;
-      case 'portal': state.loginPortal = arg; state.authView = 'signin'; render(); break;
       case 'auth-forgot': state.authView = 'forgot'; render(); break;
       case 'add-student': openAddStudentSheet(); break;
       case 'auth-resend':
@@ -1086,10 +1107,10 @@
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.deferredPrompt = e; if (state.screen === 'inicio') render(); });
 
     if (A.auth) await A.auth.init();
+    detectCoachGate();
 
     if (authEnabled() && A.auth.inviteToken) {
       await A.auth.loadInvite(A.auth.inviteToken);
-      state.loginPortal = 'student';
       state.authView = 'signup';
     }
 
