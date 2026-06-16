@@ -151,7 +151,7 @@ window.Arcore = window.Arcore || {};
       },
     });
 
-    auth.client.auth.onAuthStateChange(async (event, session) => {
+    auth.client.auth.onAuthStateChange((event, session) => {
       auth.session = session;
       if (event === 'PASSWORD_RECOVERY') auth.recoveryMode = true;
       if (event === 'USER_UPDATED' && session) auth.inviteMode = false;
@@ -160,15 +160,25 @@ window.Arcore = window.Arcore || {};
           auth.cleanAuthUrl();
         }
       }
-      if (session) {
-        await auth.loadProfile();
-        if (!auth.recoveryMode &&
-            (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
-          await auth.tryAcceptInvite();
-        }
-      } else auth.profile = null;
-      auth.ready = true;
-      emit();
+      // CRITICAL: never await Supabase calls *synchronously inside* this callback.
+      // supabase-js holds the GoTrue navigator-lock while the callback runs, so
+      // loadProfile()/rpc() would wait on a lock the callback itself holds →
+      // every authenticated request deadlocks. Defer DB work past the lock.
+      setTimeout(async () => {
+        try {
+          if (session) {
+            await auth.loadProfile();
+            if (!auth.recoveryMode &&
+                (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
+              await auth.tryAcceptInvite();
+            }
+          } else {
+            auth.profile = null;
+          }
+        } catch (e) { console.error('auth state change', e); }
+        auth.ready = true;
+        emit();
+      }, 0);
     });
 
     if (auth.inviteToken && !auth.inviteData) {

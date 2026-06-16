@@ -22,3 +22,6 @@ __pycache__/
 
 # Local Claude Code preview/launch config
 .claude/
+
+# local QA/admin helper (uses service role; do not ship)
+scripts/qa-provision.mjs
