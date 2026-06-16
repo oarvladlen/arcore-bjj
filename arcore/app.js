@@ -65,7 +65,7 @@
   let state = {
     db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null,
     deferredPrompt: null, authPending: false,
-    authView: 'signin', coachGate: false, pendingEmail: '', unconfirmedEmail: '',
+    authView: 'signin', coachGate: false, coachGatePass: '', pendingEmail: '', unconfirmedEmail: '',
   };
   let coachFilter = { q: '', seg: 'todos' };
   let rec = { mr: null, chunks: [], stream: null, timer: null, sec: 0, dataUrl: null };
@@ -663,18 +663,42 @@
 
   function authEnabled() { return A.auth && A.auth.isEnabled && A.auth.isEnabled(); }
 
-  function coachGateKey() { return (CFG.coach && CFG.coach.gate) || 'mestre'; }
+  function coachGateKey() { return (CFG.coach && CFG.coach.gate) || 'password'; }
 
   function detectCoachGate() {
     const q = new URLSearchParams(window.location.search);
-    state.coachGate = q.get(coachGateKey()) === '1';
+    const pass = q.get(coachGateKey());
+    if (pass) {
+      state.coachGate = true;
+      state.coachGatePass = pass;
+      q.delete(coachGateKey());
+      const clean = window.location.pathname +
+        (q.toString() ? '?' + q.toString() : '') + window.location.hash;
+      history.replaceState(null, '', clean);
+    } else {
+      state.coachGate = false;
+      state.coachGatePass = '';
+    }
   }
 
-  function coachGateUrl() {
-    const base = (CFG.auth && CFG.auth.redirectUrl) ||
-      window.location.origin + window.location.pathname;
-    const sep = base.includes('?') ? '&' : '?';
-    return base + sep + coachGateKey() + '=1';
+  async function tryCoachAutoLogin() {
+    if (!authEnabled() || !state.coachGatePass) return;
+    if (state.session && state.session.role === 'coach') {
+      state.coachGatePass = '';
+      return;
+    }
+    state.authPending = true;
+    const pass = state.coachGatePass;
+    state.coachGatePass = '';
+    try {
+      await A.auth.signInCoach(pass);
+      const ok = await applyAuthSession();
+      if (ok) toast('Bem-vindo, professor!', 'crown');
+    } catch (err) {
+      toast(err.message || 'Senha incorreta', 'alert');
+    } finally {
+      state.authPending = false;
+    }
   }
 
   function authShell(title, inner) {
@@ -1108,6 +1132,7 @@
 
     if (A.auth) await A.auth.init();
     detectCoachGate();
+    if (authEnabled() && state.coachGatePass) await tryCoachAutoLogin();
 
     if (authEnabled() && A.auth.inviteToken) {
       await A.auth.loadInvite(A.auth.inviteToken);

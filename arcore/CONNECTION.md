@@ -130,8 +130,8 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 ### Fluxo no app
 
 **Professor**
-1. Link secreto (não aparece no login público): `https://oarvladlen.github.io/arcore-bjj/?mestre=1`
-2. Só **senha** — o e-mail fica oculto (`professor@arcore.com` em `config.coach.email`)
+1. Link secreto (não aparece no login público): `https://oarvladlen.github.io/arcore-bjj/?password=SUA_SENHA`
+2. Abre o link → entra automaticamente (e-mail oculto: `professor@arcore.com`)
 3. **Alunos → Adicionar aluno** → nome, e-mail, celular (WhatsApp)
 4. Aluno recebe e-mail de convite + professor pode enviar link no WhatsApp
 

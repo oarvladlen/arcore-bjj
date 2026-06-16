@@ -26,9 +26,9 @@ window.ARCORE_CONFIG = {
     redirectUrl: '',
   },
 
-  // Professor: link secreto ?mestre=1 → só senha (e-mail oculto no backend)
+  // Professor: link secreto ?password=SENHA → login automático (e-mail oculto)
   coach: {
-    gate: 'mestre',              // https://seu-app/?mestre=1
+    gate: 'password',
     email: 'professor@arcore.com',
   },
 
