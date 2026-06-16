@@ -65,34 +65,19 @@ Deno.serve(async (req) => {
     if (invErr) return json({ error: invErr.message }, 400);
 
     const inviteLink = `${appUrl.replace(/\/$/, '')}/?invite=${token}`;
-    let emailSent = false;
-    let emailError: string | null = null;
 
-    const { error: inviteEmailErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: {
-        role: 'member',
-        member_id: memberId,
-        display_name: name,
-        phone,
-        invite_token: token,
-      },
-      redirectTo: inviteLink,
-    });
-
-    if (inviteEmailErr) {
-      emailError = inviteEmailErr.message;
-    } else {
-      emailSent = true;
-    }
-
+    // Link-only onboarding: the student opens the WhatsApp link, sets a password
+    // on the signup screen, and is in. No e-mail dependency, no SMTP required.
+    // We intentionally do NOT call inviteUserByEmail — it sends a throttled
+    // e-mail and pre-creates a user that would dead-end the link on "check your
+    // inbox". The signup-via-link flow (with email confirmation OFF) is instant.
     return json({
       ok: true,
       memberId,
       token,
       inviteLink,
-      emailSent,
-      emailError,
-      whatsappText: `Oi ${name.split(' ')[0]}! 🥋 Entra no app da Arcore: ${inviteLink}`,
+      emailSent: false,
+      whatsappText: `Oi ${name.split(' ')[0]}! 🥋 Bem-vindo à Arcore. Crie sua senha e entre no app: ${inviteLink}`,
     });
   } catch (e) {
     return json({ error: String(e) }, 500);
