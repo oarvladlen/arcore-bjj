@@ -476,7 +476,8 @@
     if (!authEnabled()) return !state.session;
     if (state.coachGate && (!state.session || state.session.role !== 'coach')) return true;
     if (A.auth.recoveryMode) return true;
-    if (A.auth.inviteMode && A.auth.session) return true;
+    if (A.auth.needsPasswordSetup && A.auth.needsPasswordSetup()) return true;
+    if (state.authView === 'invite-email') return true;
     if (state.authView === 'pending-link') return true;
     if (['confirm-sent', 'reset-sent', 'confirm-required', 'forgot'].includes(state.authView)) return true;
     if (state.authView === 'signup' && A.auth.inviteData) return true;
@@ -521,11 +522,15 @@
         render();
         try {
           await A.auth.signInPassword(signin.email.value, signin.password.value, 'member');
-          toast('Bem-vindo de volta!', 'check');
+          const ok = await applyAuthSession();
+          if (ok) toast('Bem-vindo de volta!', 'check');
+          else if (state.authView !== 'confirm-required') toast('Não foi possível entrar. Confira e-mail e senha.', 'alert');
         } catch (err) {
           if (err.code === 'email_not_confirmed') {
             state.unconfirmedEmail = err.email || signin.email.value.trim();
             state.authView = 'confirm-required';
+          } else if ((err.message || '').toLowerCase().includes('invalid login')) {
+            toast('E-mail ou senha incorretos. Use o e-mail do convite (não o celular).', 'alert');
           } else {
             toast(err.message || 'Erro ao entrar', 'alert');
           }
@@ -560,7 +565,13 @@
           state.authView = 'confirm-sent';
           toast('Conta criada! Confirme seu e-mail', 'mail');
         } catch (err) {
-          toast(err.message || 'Erro ao criar conta', 'alert');
+          const msg = (err.message || '').toLowerCase();
+          if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('user already')) {
+            state.authView = 'invite-email';
+            state.pendingEmail = inv.email;
+          } else {
+            toast(err.message || 'Erro ao criar conta', 'alert');
+          }
         } finally {
           state.authPending = false;
           render();
@@ -581,7 +592,9 @@
             marketing_email: inviteComplete.mkem.checked,
             marketing_whatsapp: inviteComplete.mkwa.checked,
           });
-          toast('Conta pronta! Bem-vindo 🥋', 'check');
+          const ok = await applyAuthSession();
+          if (ok) toast('Conta pronta! Bem-vindo 🥋', 'check');
+          else toast('Senha salva. Se não entrar, fale com o professor.', 'alert');
         } catch (err) {
           toast(err.message || 'Erro ao salvar', 'alert');
         } finally {
@@ -738,16 +751,27 @@
         icon('key-round', 17) + ' Salvar nova senha</button></form>');
     }
 
-    if (A.auth.inviteMode && A.auth.session && !A.auth.recoveryMode) {
+    if (A.auth.needsPasswordSetup && A.auth.needsPasswordSetup()) {
       const inv = A.auth.inviteData || {};
       const ph = inv.phone || (A.auth.session.user.user_metadata && A.auth.session.user.user_metadata.phone) || '';
       return authShell('Quase lá, ' + esc(firstName(inv.name || 'atleta')) + '!',
-        '<p class="authtxt" style="margin-bottom:14px">Crie sua senha para entrar no app da academia.</p>' +
+        '<p class="authtxt" style="margin-bottom:14px">Confirme seu celular e crie sua senha. Depois você entra sempre com <b>e-mail + senha</b>.</p>' +
         '<form id="invitecompleteform" class="authcard">' +
         authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(ph) + '" placeholder="(13) 99999-9999">') +
         authField('Sua senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
         marketingChecks() +
         '<button class="btn full" type="submit">' + icon('check', 17) + ' Entrar no app</button></form>');
+    }
+
+    if (state.authView === 'invite-email') {
+      const inv = A.auth.inviteData || {};
+      const em = state.pendingEmail || inv.email || '';
+      return authShell(null,
+        '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
+        '<h2>Abra o e-mail do convite</h2>' +
+        '<p class="authtxt">Enviamos um link para <b>' + esc(em) + '</b>. Clique nele para criar sua senha e entrar no app.</p>' +
+        '<p class="authtxt">O celular é só para WhatsApp — para entrar depois, use sempre <b>e-mail + senha</b>.</p>' +
+        '<button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Já tenho senha — entrar</button></div>');
     }
 
     if (state.authView === 'confirm-sent' || state.authView === 'reset-sent') {
@@ -757,7 +781,7 @@
         '<h2>' + (isReset ? 'Link enviado' : 'Confirme seu e-mail') + '</h2>' +
         '<p class="authtxt">' + (isReset
           ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>.'
-          : 'Enviamos confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique no link e depois entre com sua senha.') +
+          : 'Enviamos confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique no link e depois entre com <b>e-mail + senha</b> (não use o celular).') +
         '</p><button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Voltar ao login</button></div>');
     }
 
@@ -789,9 +813,10 @@
 
     const inv = A.auth.inviteData;
 
-    if ((state.authView === 'signup' || inv) && inv && inv.valid) {
+    if ((state.authView === 'signup' || inv) && inv && inv.valid && !inv.user_exists && !A.auth.session) {
       return authShell('Bem-vindo à Arcore',
         '<p class="authtxt" style="margin-bottom:12px">Oi <b>' + esc(firstName(inv.name)) + '</b>! Crie sua senha — leva 30 segundos.</p>' +
+        '<p class="authtxt" style="margin-bottom:12px">Celular é para WhatsApp. Depois você entra com <b>e-mail + senha</b>.</p>' +
         '<form id="signupform" class="authcard">' +
         authField('E-mail', '<input class="input" name="email" type="email" readonly value="' + esc(inv.email) + '">') +
         authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(inv.phone || '') + '" placeholder="(13) 99999-9999">') +
@@ -801,11 +826,21 @@
         '<p class="authtxt">Depois confirme o e-mail que vamos mandar.</p></form>');
     }
 
+    if (inv && inv.valid && inv.user_exists && !A.auth.session) {
+      return authShell(null,
+        '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
+        '<h2>Abra o e-mail do convite</h2>' +
+        '<p class="authtxt">Enviamos um link para <b>' + esc(inv.email) + '</b>. Clique nele para criar sua senha.</p>' +
+        '<p class="authtxt">Depois entre com <b>e-mail + senha</b> (o celular não funciona no login).</p>' +
+        '<button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Já tenho senha — entrar</button></div>');
+    }
+
     return authShell('Entrar',
       '<form id="signinform" class="authcard">' +
       authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com">') +
       authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
       '<button class="btn full" type="submit">' + icon('lock', 17) + ' Entrar</button>' +
+      '<p class="authtxt" style="margin-top:10px">Entre com o <b>e-mail do convite</b>, não o celular.</p>' +
       '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>' +
       '<div class="authcard" style="margin-top:12px;padding:16px"><p class="authtxt" style="margin:0">' +
       icon('mail', 14) + ' <b>Primeira vez?</b> Peça ao professor um convite por e-mail. Você recebe um link para criar sua senha.</p></div>');
@@ -1084,7 +1119,7 @@
       state.session = null;
       return false;
     }
-    if (A.auth.inviteMode && A.auth.session) {
+    if (A.auth.needsPasswordSetup && A.auth.needsPasswordSetup()) {
       state.session = null;
       return false;
     }
@@ -1136,7 +1171,13 @@
 
     if (authEnabled() && A.auth.inviteToken) {
       await A.auth.loadInvite(A.auth.inviteToken);
-      state.authView = 'signup';
+      const inv = A.auth.inviteData;
+      if (inv && inv.user_exists && !A.auth.session) {
+        state.authView = 'invite-email';
+        state.pendingEmail = inv.email;
+      } else {
+        state.authView = 'signup';
+      }
     }
 
     if (authEnabled()) {

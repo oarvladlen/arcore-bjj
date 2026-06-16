@@ -81,6 +81,29 @@ window.Arcore = window.Arcore || {};
     if (error || !data || !data.valid) return null;
     auth.inviteData = data;
     auth.inviteToken = token;
+    try { sessionStorage.setItem('arcore.invite', token); } catch (e) { /* ignore */ }
+    return data;
+  };
+
+  auth.needsPasswordSetup = function () {
+    if (!auth.session || !auth.session.user) return false;
+    const user = auth.session.user;
+    if (user.invited_at) return true;
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    return hash.get('type') === 'invite';
+  };
+
+  auth.tryAcceptInvite = async function () {
+    if (!auth.client || !auth.session) return null;
+    const token = auth.inviteToken ||
+      (function () { try { return sessionStorage.getItem('arcore.invite'); } catch (e) { return null; } })();
+    if (!token) return null;
+    const { data, error } = await auth.client.rpc('accept_invitation', { p_token: token });
+    if (error) return null;
+    if (data && data.ok) {
+      try { sessionStorage.removeItem('arcore.invite'); } catch (e) { /* ignore */ }
+      await auth.loadProfile();
+    }
     return data;
   };
 
@@ -109,14 +132,21 @@ window.Arcore = window.Arcore || {};
 
     const { data: { session } } = await auth.client.auth.getSession();
     auth.session = session;
-    if (session) await auth.loadProfile();
+    if (session) {
+      await auth.loadProfile();
+      await auth.tryAcceptInvite();
+    }
 
     auth.client.auth.onAuthStateChange(async (event, session) => {
       auth.session = session;
       if (event === 'PASSWORD_RECOVERY') auth.recoveryMode = true;
       if (event === 'USER_UPDATED' && session) auth.inviteMode = false;
-      if (session) await auth.loadProfile();
-      else auth.profile = null;
+      if (session) {
+        await auth.loadProfile();
+        if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+          await auth.tryAcceptInvite();
+        }
+      } else auth.profile = null;
       auth.ready = true;
       emit();
     });
@@ -170,15 +200,16 @@ window.Arcore = window.Arcore || {};
       },
     });
     if (error) throw error;
-    if (opts.member_id) {
+    if (data.session) await auth.tryAcceptInvite();
+    else if (auth.inviteToken) {
+      try { sessionStorage.setItem('arcore.invite', auth.inviteToken); } catch (e) { /* ignore */ }
+    }
+    if (opts.member_id && data.session) {
       await auth.client.from('members').update({
         phone: opts.phone,
         marketing_email: opts.marketing_email,
         marketing_whatsapp: opts.marketing_whatsapp,
       }).eq('id', opts.member_id);
-    }
-    if (auth.inviteToken && data.user) {
-      await auth.client.rpc('accept_invitation', { p_token: auth.inviteToken }).catch(() => {});
     }
     return data;
   };
@@ -195,9 +226,7 @@ window.Arcore = window.Arcore || {};
     }
     const { data, error } = await auth.client.auth.updateUser(patch);
     if (error) throw error;
-    if (auth.inviteToken) {
-      await auth.client.rpc('accept_invitation', { p_token: auth.inviteToken });
-    }
+    await auth.tryAcceptInvite();
     if (extras && auth.profile && auth.profile.member_id) {
       await auth.client.from('members').update({
         phone: extras.phone,
@@ -211,6 +240,8 @@ window.Arcore = window.Arcore || {};
       u.searchParams.delete('invite');
       history.replaceState(null, '', u.pathname + u.search + u.hash);
     }
+    await auth.loadProfile();
+    emit();
     return data;
   };
 
@@ -242,6 +273,7 @@ window.Arcore = window.Arcore || {};
       e.email = email.trim().toLowerCase();
       throw e;
     }
+    await auth.tryAcceptInvite();
     await auth.loadProfile();
     if (expectRole === 'coach' && (!auth.profile || auth.profile.role !== 'coach')) {
       await auth.client.auth.signOut();

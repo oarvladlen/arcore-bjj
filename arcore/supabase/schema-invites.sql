@@ -49,7 +49,7 @@ returns json
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, auth
 as $$
   select json_build_object(
     'valid', (i.status = 'pending' and i.expires_at > now()),
@@ -57,7 +57,10 @@ as $$
     'phone', i.phone,
     'name', m.name,
     'member_id', i.member_id,
-    'status', i.status
+    'status', i.status,
+    'user_exists', exists(
+      select 1 from auth.users u where lower(u.email) = lower(i.email)
+    )
   )
   from invitations i
   join members m on m.id = i.member_id
