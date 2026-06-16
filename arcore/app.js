@@ -224,15 +224,15 @@
   }
   function stat(v, em, k) { return '<div class="stat"><div class="v">' + v + (em ? '<em>' + em + '</em>' : '') + '</div><div class="k">' + k + '</div></div>'; }
   function goalRow(g) {
-    let prog;
-    if (g.target <= 6) {
-      prog = '<div class="pips">' + Array.from({ length: g.target }, (_, i) => '<i class="' + (i < g.progress ? 'f' : '') + '"></i>').join('') + '</div>';
-    } else {
-      prog = '<div class="pips"></div>';
-    }
-    const sub = g.target <= 6 ? (g.progress + ' de ' + g.target + ' nesta ' + g.period) : (g.progress + ' / ' + g.target + ' · ' + g.period);
-    return '<div class="meta-row"><div class="ic">' + icon(g.icon || 'target', 18) + '</div>' +
-      '<div class="g"><div class="t">' + esc(g.title) + '</div><div class="s">' + sub + '</div></div>' + prog + '</div>';
+    const done = g.progress >= g.target;
+    const auto = g.kind === 'treinos';
+    const sub = (auto ? 'automática · ' : '') + g.progress + ' / ' + g.target + ' · ' + g.period;
+    return '<div class="meta-row' + (done ? ' done' : '') + '"><div class="ic">' + icon(done ? 'check' : (g.icon || 'target'), 18) + '</div>' +
+      '<div class="g"><div class="t">' + esc(g.title) + '</div><div class="s">' + sub + '</div></div>' +
+      '<div class="stepper"><button data-act="goalstep:' + g.id + '|down" aria-label="Menos">' + icon('chevron-left', 14) + '</button>' +
+      '<span>' + g.progress + '/' + g.target + '</span>' +
+      '<button data-act="goalstep:' + g.id + '|up" aria-label="Mais">' + icon('chevron-right', 14) + '</button></div>' +
+      '<button class="goaldel" data-act="delgoal:' + g.id + '" aria-label="Remover meta">' + icon('x', 13) + '</button></div>';
   }
 
   async function viewRanking() {
@@ -275,11 +275,16 @@
     h += '<div class="eyebrow">' + icon('alert', 13) + ' Recuperar (win-back)<span class="more">' + atRisk.length + ' aluno(s)</span></div>';
     h += atRisk.length ? atRisk.map(winRow).join('') : '<div class="empty">Ninguém em risco. 🔥<br/>Todos treinando em dia.</div>';
 
-    if (cls) {
-      h += '<div class="eyebrow">' + icon('flame', 13) + ' Hoje no tatame</div>';
+    const todayCls = cls && U.sameDay(cls.datetime);
+    h += '<div class="eyebrow">' + icon('flame', 13) + ' Hoje no tatame</div>';
+    if (todayCls) {
       h += '<div class="card"><div class="ci"><div class="t">' + esc(cls.title) + '</div>' +
         '<div class="d">' + icon('clock', 13) + ' Hoje, ' + hourLabel(cls.datetime) + ' · ' + s.checkinsHoje + ' check-in(s)</div></div>' +
         '<button class="btn sec sm" data-act="nav:alunos" style="margin-top:12px">' + icon('users', 16) + ' Marcar presença</button></div>';
+    } else {
+      h += '<div class="card"><div class="ci"><div class="t">Nenhuma aula hoje</div>' +
+        '<div class="d">' + icon('alert', 13) + ' Crie a aula para liberar o check-in dos alunos.</div></div>' +
+        '<button class="btn sm" data-act="newclass" style="margin-top:12px">' + icon('plus', 16) + ' Criar aula de hoje</button></div>';
     }
     h += '</section>';
     return h;
@@ -354,6 +359,12 @@
 
     h += '<div class="quickrow"><button class="btn gold" data-act="awardfor:' + m.id + '">' + icon('award', 16) + ' Dar selo</button>' +
       '<button class="btn sec" data-act="present:' + m.id + '">' + icon('check', 16) + ' Marcar presença</button></div>';
+
+    h += '<div class="eyebrow">' + icon('trending-up', 13) + ' Graduação manual</div>' +
+      '<div class="card promote"><div class="g"><b>' + esc(m.beltLabel) + '</b><div class="s">' + m.stripes + ' de 4 graus</div></div>' +
+      '<button class="ghost" data-act="promote:' + m.id + '|down" aria-label="Rebaixar">' + icon('chevron-left', 18) + '</button>' +
+      '<div class="graus" style="margin:0">' + Array.from({ length: 4 }, (_, k) => '<i class="' + (k < m.stripes ? 'f' : '') + '"></i>').join('') + '</div>' +
+      '<button class="ghost" data-act="promote:' + m.id + '|up" aria-label="Promover">' + icon('chevron-right', 18) + '</button></div>';
     if (m.phone) {
       h += '<div class="card" style="margin-top:12px;font-size:13px;color:var(--muted)">' +
         icon('message-circle', 14) + ' <b style="color:var(--text)">' + esc(m.phone) + '</b>' +
@@ -371,6 +382,7 @@
 
   async function viewPostar() {
     const tipos = ['Gi', 'No-Gi', 'Drilling', 'Competição'];
+    const posts = await state.db.listPosts();
     let h = '<section class="screen">';
     h += '<div class="eyebrow" style="margin-top:14px">' + icon('video', 13) + ' Postar o que foi treinado</div>';
     h += '<p class="hello">Quem faltou não perde. Cole o link do vídeo (YouTube, Instagram, Vimeo) e mande um recado.</p>';
@@ -388,7 +400,16 @@
       '<button type="button" class="ghost" id="recclear" hidden>' + icon('x', 16) + '</button></div>' +
       '<audio id="recplayback" controls hidden style="width:100%;margin-top:10px"></audio>');
     h += '<button class="btn full" type="submit" style="margin-top:6px">' + icon('send', 17) + ' Publicar pro feed</button>';
-    h += '</form></section>';
+    h += '</form>';
+
+    if (posts.length) {
+      h += '<div class="eyebrow">' + icon('video', 13) + ' Técnicas no feed<span class="more">' + posts.length + '</span></div>';
+      h += posts.map((p) => '<div class="managerow"><div class="g"><b>' + esc(p.title) + '</b>' +
+        '<div class="s">' + esc(p.position || 'Técnica') + ' · ' + U.fmtAgo(p.at) + '</div></div>' +
+        (p.video_url ? '<a class="ghost" href="' + esc(p.video_url) + '" target="_blank" rel="noopener" aria-label="Ver vídeo">' + icon('play', 16) + '</a>' : '') +
+        '<button class="ghost danger" data-act="delpost:' + p.id + '" aria-label="Apagar">' + icon('x', 16) + '</button></div>').join('');
+    }
+    h += '</section>';
     return h;
   }
   function field(label, inner) { return '<div class="field"><label>' + label + '</label>' + inner + '</div>'; }
@@ -443,7 +464,10 @@
       bindAuthForm();
       return;
     }
-    if (state.session.role === 'member') state.member = await state.db.getMember(state.memberId);
+    if (state.session.role === 'member') {
+      state.member = await state.db.getMember(state.memberId);
+      renderChrome(); // member now loaded → header shows correct avatar/name/streak
+    }
     let html = '';
     try {
       switch (state.screen) {
@@ -943,16 +967,44 @@
       case 'pickmember': openPickMember(arg); break;
       case 'awardgo': await doAward(arg, t); break;
       case 'rec': toggleRecording(); break;
+      case 'closesheet': closeSheet(); break;
+      case 'promote': await doPromote(arg); break;
+      case 'delpost': await doDeletePost(arg); break;
+      case 'newclass': openClassSheet(); break;
+      case 'goalstep': await doGoalStep(arg, t); break;
+      case 'delgoal': await doDeleteGoal(arg); break;
       default: break;
     }
   }
 
   async function doCheckin() {
-    const cls = await state.db.todayClass(); if (!cls) return;
+    const cls = await state.db.todayClass();
+    if (!cls) { toast('Nenhuma aula hoje. Fale com o professor.', 'alert'); return; }
     const r = await state.db.checkIn(state.member.id, cls.id);
     if (r.already) { toast('Você já fez check-in hoje', 'check'); }
+    else if (r.goalsAdvanced) { toast('Check-in feito · +' + r.xp + ' XP · meta avançou 🎯', 'zap'); }
     else { toast('Check-in feito · +' + r.xp + ' XP', 'zap'); }
-    render();
+    await render();
+    if (r.promotions && r.promotions.length) celebratePromotion(r.promotions, state.member.name);
+  }
+
+  /** Big celebratory modal when a check-in earns a stripe or a new belt. */
+  function celebratePromotion(promotions, name) {
+    const last = promotions[promotions.length - 1];
+    const isBelt = last.type === 'belt';
+    const belt = U.belt[last.belt] || U.belt.branca;
+    const title = isBelt ? 'Nova faixa! 🥋' : 'Novo grau! 🔥';
+    const line = isBelt
+      ? '<b>' + esc(firstName(name)) + '</b> subiu para a <b>' + esc(belt.label) + '</b>'
+      : '<b>' + esc(firstName(name)) + '</b> conquistou o <b>' + last.stripes + 'º grau</b> na ' + esc(belt.label.toLowerCase());
+    const filled = isBelt ? 0 : last.stripes;
+    const graus = '<div class="graus celebgraus">' +
+      Array.from({ length: 4 }, (_, k) => '<i class="' + (k < filled ? 'f' : '') + '"></i>').join('') + '</div>';
+    openSheet('<div class="celeb"><div class="celeb-seal" style="background:' + U.beltColor(last.belt) +
+      ';' + (last.belt === 'branca' ? 'color:#3a2e1c' : '') + '">' + icon('award', 38) + '</div>' +
+      '<h2 style="text-align:center;margin:14px 0 4px">' + title + '</h2>' +
+      '<p class="authtxt" style="text-align:center">' + line + '</p>' + graus +
+      '<button class="btn full" data-act="closesheet" style="margin-top:18px">' + icon('flame', 17) + ' Oss!</button></div>');
   }
   async function doSave(postId, btn) {
     const saved = await state.db.toggleSave(state.member.id, postId);
@@ -1000,10 +1052,59 @@
     window.open(waLink(m, txt), '_blank');
   }
   async function doPresent(id) {
-    const cls = await state.db.todayClass(); if (!cls) return;
+    const cls = await state.db.todayClass();
+    if (!cls) { toast('Crie a aula de hoje primeiro.', 'alert'); return; }
     const r = await state.db.checkIn(id, cls.id);
     toast(r.already ? 'Já estava presente hoje' : 'Presença registrada · +' + r.xp + ' XP', 'check');
+    await render();
+    if (r.promotions && r.promotions.length && r.member) {
+      const last = r.promotions[r.promotions.length - 1];
+      toast(firstName(r.member.name) + (last.type === 'belt' ? ' subiu de faixa! 🥋' : ' ganhou um grau! 🔥'), 'award');
+    }
+  }
+  async function doPromote(arg) {
+    const [id, dir] = arg.split('|');
+    const m = await state.db.promoteMember(id, dir);
+    if (m) toast(firstName(m.name) + ' agora: ' + m.beltLabel + ' · ' + m.stripes + 'º', 'award');
     render();
+  }
+  async function doDeletePost(id) {
+    if (!confirm('Apagar esta técnica do feed?')) return;
+    await state.db.deletePost(id);
+    toast('Técnica apagada', 'check');
+    render();
+  }
+  async function doGoalStep(arg, btn) {
+    const [id, dir] = arg.split('|');
+    const g = await state.db.advanceGoal(id, dir === 'down' ? -1 : 1);
+    if (g) {
+      if (g.progress >= g.target) toast('Meta concluída! 🎯', 'trophy');
+      render();
+    }
+  }
+  async function doDeleteGoal(id) {
+    if (!confirm('Remover esta meta?')) return;
+    await state.db.deleteGoal(id);
+    toast('Meta removida', 'check');
+    render();
+  }
+  function openClassSheet() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    openSheet('<h3>Nova aula</h3><div class="sub">Crie a aula de hoje para liberar o check-in</div>' +
+      '<form id="classform">' +
+      field('Título', '<input class="input" name="title" required placeholder="Ex.: Treino Gi · Fundamentos">') +
+      field('Tipo', '<select class="input" name="type"><option value="gi">Gi</option><option value="nogi">No-Gi</option><option value="drill">Drilling</option><option value="comp">Competição</option></select>') +
+      field('Horário', '<input class="input" name="time" type="time" value="' + hh + '" required>') +
+      '<button class="btn full" type="submit">' + icon('plus', 17) + ' Criar aula</button></form>');
+    $('#classform').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const [h, mn] = (f.time.value || '19:00').split(':').map(Number);
+      const dt = new Date(); dt.setHours(h || 19, mn || 0, 0, 0);
+      await state.db.createClass({ title: f.title.value.trim(), type: f.type.value, datetime: dt.toISOString(), coach: COACH.name });
+      closeSheet(); toast('Aula criada — check-in liberado', 'check'); render();
+    });
   }
 
   /* ----- award flows ----- */
@@ -1043,15 +1144,24 @@
   function openGoalSheet() {
     const h = '<h3>Nova meta</h3><div class="sub">Você no controle do seu progresso</div>' +
       '<form id="goalform">' +
+      field('Tipo', '<div class="chips" id="goalkind">' +
+        '<button type="button" class="opt on" data-kind="treinos">Treinos (conta sozinho)</button>' +
+        '<button type="button" class="opt" data-kind="custom">Livre (marco eu)</button></div>') +
       field('Meta', '<input class="input" name="title" required placeholder="Ex.: Treinar 3x por semana">') +
       field('Alvo (número)', '<input class="input" name="target" type="number" min="1" value="3">') +
       field('Período', '<select class="input" name="period"><option value="semana">por semana</option><option value="mês">por mês</option><option value="ano">no ano</option></select>') +
       '<button class="btn full" type="submit">' + icon('check', 17) + ' Criar meta</button></form>';
     openSheet(h);
+    let kind = 'treinos';
+    $('#goalkind').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-kind]'); if (!b) return;
+      kind = b.dataset.kind;
+      $('#goalkind').querySelectorAll('.opt').forEach((o) => o.classList.toggle('on', o === b));
+    });
     $('#goalform').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = e.target;
-      await state.db.createGoal(state.member.id, { title: f.title.value.trim(), target: parseInt(f.target.value, 10) || 1, period: f.period.value });
+      await state.db.createGoal(state.member.id, { title: f.title.value.trim(), target: parseInt(f.target.value, 10) || 1, period: f.period.value, kind, icon: kind === 'treinos' ? 'flame' : 'target' });
       closeSheet(); toast('Meta criada 🎯', 'target'); render();
     });
   }

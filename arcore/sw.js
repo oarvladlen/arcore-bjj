@@ -1,9 +1,9 @@
 /* Arcore service worker — offline app shell */
-const VERSION = 'arcore-v13';
+const VERSION = 'arcore-v14';
 const SHELL = [
   './',
   './index.html',
-  './app.css',
+  './app.css?v=14',
   './icon.svg',
   './icon-maskable.svg',
   './manifest.webmanifest',

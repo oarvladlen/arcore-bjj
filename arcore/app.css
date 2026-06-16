@@ -330,3 +330,36 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 .installbar .g{flex:1;font-size:12.5px;color:var(--text)}
 .installbar .g b{font-weight:700}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- product additions: promotions, goals, class/post management ---- */
+.celeb{display:flex;flex-direction:column;align-items:center;padding:6px 4px 4px}
+.celeb-seal{width:84px;height:84px;border-radius:24px;display:grid;place-items:center;color:#fff;
+  box-shadow:0 14px 40px rgba(0,0,0,.45);animation:pop .4s cubic-bezier(.2,1.3,.4,1)}
+@keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+.celebgraus{display:flex;gap:8px;justify-content:center;margin-top:14px}
+.celebgraus i{width:12px;height:26px;border-radius:3px;background:rgba(255,255,255,.16)}
+.celebgraus i.f{background:var(--gold);box-shadow:0 0 12px rgba(215,170,76,.5)}
+
+.promote{display:flex;align-items:center;gap:12px}
+.promote .g{flex:1}
+.promote .g .s{color:var(--muted);font-size:12px;font-weight:600;margin-top:2px}
+.promote .graus{display:flex;gap:4px}
+.promote .graus i{width:8px;height:20px;background:rgba(255,255,255,.16);border-radius:2px}
+.promote .graus i.f{background:var(--gold)}
+
+.meta-row.done .t{color:var(--gold)}
+.meta-row .ic{transition:background .2s}
+.stepper{display:flex;align-items:center;gap:2px;flex:none}
+.stepper button{width:30px;height:30px;border-radius:9px;background:var(--surface2);border:1px solid var(--line2);
+  color:var(--text);display:grid;place-items:center;cursor:pointer}
+.stepper span{min-width:42px;text-align:center;font-weight:800;font-size:12.5px;color:var(--text)}
+.goaldel{width:26px;height:26px;border-radius:8px;background:transparent;border:none;color:var(--faint);
+  display:grid;place-items:center;cursor:pointer;flex:none;margin-left:2px}
+.goaldel:hover{color:#ff9077}
+
+.managerow{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:13px;padding:12px 13px;margin-bottom:9px}
+.managerow .g{flex:1;min-width:0}
+.managerow .g b{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.managerow .g .s{color:var(--muted);font-size:11.5px;margin-top:2px}
+.ghost.danger{color:#ff9077;border-color:rgba(255,144,119,.3)}

@@ -51,6 +51,30 @@ window.Arcore = window.Arcore || {};
       const done = Math.min(per, member.classes_since_stripe || 0);
       return { remaining: Math.max(0, per - done), pct: Math.round((done / per) * 100), per, done };
     },
+    beltOrder: ['branca', 'azul', 'roxa', 'marrom', 'preta'],
+    /* Mutates member: cashes in classes_since_stripe for stripes/belt promotions.
+       Returns an array of promotion events for the UI to celebrate. */
+    promote(m) {
+      const per = R.classesPerStripe;
+      const events = [];
+      let guard = 0;
+      while ((m.classes_since_stripe || 0) >= per && guard++ < 50) {
+        const i = util.beltOrder.indexOf(m.belt);
+        const isBlackMax = m.belt === 'preta' && m.stripes >= 4;
+        if (isBlackMax) { m.classes_since_stripe = per; break; }
+        m.classes_since_stripe -= per;
+        if (m.stripes < 4) {
+          m.stripes += 1;
+          events.push({ type: 'stripe', belt: m.belt, stripes: m.stripes });
+        } else if (i >= 0 && i < util.beltOrder.length - 1) {
+          m.belt = util.beltOrder[i + 1];
+          m.stripes = 0;
+          events.push({ type: 'belt', belt: m.belt, stripes: 0 });
+        }
+      }
+      if (m.league && m.belt) m.league = m.belt;
+      return events;
+    },
     // ----- video embed (YouTube / Vimeo / link) -----
     ytId(url) {
       const m = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{6,})/);
@@ -158,8 +182,8 @@ window.Arcore = window.Arcore || {};
     ];
 
     const goals = [
-      { id: 'g1', member_id: 'm_joao', title: 'Treinar 3x por semana', target: 3, progress: 2, period: 'semana', icon: 'target' },
-      { id: 'g2', member_id: 'm_joao', title: 'Competir até dezembro',  target: 1, progress: 0, period: 'ano',    icon: 'trophy' },
+      { id: 'g1', member_id: 'm_joao', title: 'Treinar 3x por semana', target: 3, progress: 2, period: 'semana', icon: 'target', kind: 'treinos' },
+      { id: 'g2', member_id: 'm_joao', title: 'Competir até dezembro',  target: 1, progress: 0, period: 'ano',    icon: 'trophy', kind: 'custom' },
     ];
 
     const checkins = [
@@ -227,7 +251,8 @@ window.Arcore = window.Arcore || {};
   };
 
   LocalDB.prototype.todayClass = async function () {
-    return util.clone(this.S.classes.find((c) => util.sameDay(c.datetime)) || this.S.classes[0]);
+    const c = this.S.classes.find((x) => util.sameDay(x.datetime));
+    return c ? util.clone(c) : null;
   };
   LocalDB.prototype.listClasses = async function () { return util.clone(this.S.classes); };
 
@@ -238,11 +263,34 @@ window.Arcore = window.Arcore || {};
     if (await this.isCheckedInToday(memberId, classId)) return { already: true, xp: 0 };
     this.S.checkins.push({ id: util.uid('ck'), member_id: memberId, class_id: classId, at: util.nowISO() });
     const m = this.S.members.find((x) => x.id === memberId);
+    let promotions = [];
+    let goalsAdvanced = 0;
     if (m) {
       m.total_classes += 1; m.classes_since_stripe += 1; m.mat_hours += 1.5;
       m.last_class_at = util.nowISO(); m.xp += R.xpCheckin; m.week_xp += R.xpCheckin;
+      if (m.status === 'experimental') m.status = 'ativo';
+      promotions = util.promote(m);
+      this.S.goals.forEach((g) => {
+        if (g.member_id === memberId && g.kind === 'treinos' && g.progress < g.target) {
+          g.progress += 1; goalsAdvanced += 1;
+        }
+      });
     }
-    await this._save(); return { already: false, xp: R.xpCheckin };
+    await this._save();
+    return { already: false, xp: R.xpCheckin, promotions, goalsAdvanced, member: m ? decorateMember(m) : null };
+  };
+  LocalDB.prototype.promoteMember = async function (memberId, dir) {
+    const m = this.S.members.find((x) => x.id === memberId); if (!m) return null;
+    const i = util.beltOrder.indexOf(m.belt);
+    if (dir === 'down') {
+      if (m.stripes > 0) m.stripes -= 1;
+      else if (i > 0) { m.belt = util.beltOrder[i - 1]; m.stripes = 4; }
+    } else {
+      if (m.stripes < 4) m.stripes += 1;
+      else if (i < util.beltOrder.length - 1) { m.belt = util.beltOrder[i + 1]; m.stripes = 0; }
+    }
+    m.classes_since_stripe = 0; m.league = m.belt;
+    await this._save(); return decorateMember(m);
   };
   LocalDB.prototype.checkinsToday = async function (classId) {
     return this.S.checkins.filter((c) => util.sameDay(c.at) && (!classId || c.class_id === classId)).length;
@@ -312,8 +360,23 @@ window.Arcore = window.Arcore || {};
     return this.S.goals.filter((g) => g.member_id === memberId).map(util.clone);
   };
   LocalDB.prototype.createGoal = async function (memberId, data) {
-    const g = { id: util.uid('g'), member_id: memberId, title: data.title, target: data.target || 1, progress: 0, period: data.period || 'semana', icon: data.icon || 'target' };
+    const g = { id: util.uid('g'), member_id: memberId, title: data.title, target: data.target || 1, progress: 0, period: data.period || 'semana', icon: data.icon || 'target', kind: data.kind || 'custom' };
     this.S.goals.push(g); await this._save(); return util.clone(g);
+  };
+  LocalDB.prototype.advanceGoal = async function (goalId, delta) {
+    const g = this.S.goals.find((x) => x.id === goalId); if (!g) return null;
+    g.progress = Math.max(0, Math.min(g.target, g.progress + (delta || 1)));
+    await this._save(); return util.clone(g);
+  };
+  LocalDB.prototype.deleteGoal = async function (goalId) {
+    this.S.goals = this.S.goals.filter((x) => x.id !== goalId); await this._save(); return { ok: true };
+  };
+  LocalDB.prototype.deletePost = async function (postId) {
+    this.S.posts = this.S.posts.filter((p) => p.id !== postId); await this._save(); return { ok: true };
+  };
+  LocalDB.prototype.createClass = async function (data) {
+    const c = { id: util.uid('c'), title: data.title || 'Treino', type: data.type || 'gi', datetime: data.datetime || util.nowISO(), coach: data.coach || (CFG.gym.coach || 'Professor') };
+    this.S.classes.unshift(c); await this._save(); return util.clone(c);
   };
 
   LocalDB.prototype.leaderboard = async function () {
@@ -380,9 +443,7 @@ window.Arcore = window.Arcore || {};
     const end = new Date(); end.setHours(23, 59, 59, 999);
     const { data } = await this.sb.from('classes').select('*')
       .gte('datetime', start.toISOString()).lte('datetime', end.toISOString()).order('datetime').limit(1);
-    if (data && data[0]) return data[0];
-    const { data: any } = await this.sb.from('classes').select('*').order('datetime', { ascending: false }).limit(1);
-    return (any && any[0]) || null;
+    return (data && data[0]) || null;
   };
   SB.listClasses = async function () { const { data } = await this.sb.from('classes').select('*').order('datetime', { ascending: false }); return data || []; };
   SB.isCheckedInToday = async function (memberId, classId) {
@@ -395,12 +456,55 @@ window.Arcore = window.Arcore || {};
     if (await this.isCheckedInToday(memberId, classId)) return { already: true, xp: 0 };
     await this.sb.from('checkins').insert({ member_id: memberId, class_id: classId, at: util.nowISO() });
     const m = await this.getMember(memberId);
-    if (m) await this.updateMember(memberId, {
-      total_classes: m.total_classes + 1, classes_since_stripe: m.classes_since_stripe + 1,
-      mat_hours: m.mat_hours + 1.5, last_class_at: util.nowISO(), xp: m.xp + R.xpCheckin, week_xp: m.week_xp + R.xpCheckin,
-    });
-    return { already: false, xp: R.xpCheckin };
+    let promotions = [];
+    let goalsAdvanced = 0;
+    if (m) {
+      m.total_classes += 1; m.classes_since_stripe += 1; m.mat_hours += 1.5;
+      m.last_class_at = util.nowISO(); m.xp += R.xpCheckin; m.week_xp += R.xpCheckin;
+      if (m.status === 'experimental') m.status = 'ativo';
+      promotions = util.promote(m);
+      await this.updateMember(memberId, {
+        total_classes: m.total_classes, classes_since_stripe: m.classes_since_stripe,
+        mat_hours: m.mat_hours, last_class_at: m.last_class_at, xp: m.xp, week_xp: m.week_xp,
+        belt: m.belt, stripes: m.stripes, league: m.league, status: m.status,
+      });
+      const { data: gs } = await this.sb.from('goals').select('*').eq('member_id', memberId).eq('kind', 'treinos');
+      for (const g of (gs || [])) {
+        if (g.progress < g.target) {
+          await this.sb.from('goals').update({ progress: g.progress + 1 }).eq('id', g.id);
+          goalsAdvanced += 1;
+        }
+      }
+    }
+    return { already: false, xp: R.xpCheckin, promotions, goalsAdvanced, member: m };
   };
+  SB.promoteMember = async function (memberId, dir) {
+    const m = await this.getMember(memberId); if (!m) return null;
+    const i = util.beltOrder.indexOf(m.belt);
+    if (dir === 'down') {
+      if (m.stripes > 0) m.stripes -= 1;
+      else if (i > 0) { m.belt = util.beltOrder[i - 1]; m.stripes = 4; }
+    } else {
+      if (m.stripes < 4) m.stripes += 1;
+      else if (i < util.beltOrder.length - 1) { m.belt = util.beltOrder[i + 1]; m.stripes = 0; }
+    }
+    return this.updateMember(memberId, { belt: m.belt, stripes: m.stripes, classes_since_stripe: 0, league: m.belt });
+  };
+  SB.deletePost = async function (postId) { await this.sb.from('posts').delete().eq('id', postId); return { ok: true }; };
+  SB.createClass = async function (data) {
+    const { data: ins } = await this.sb.from('classes').insert({
+      id: util.uid('c'), title: data.title || 'Treino', type: data.type || 'gi',
+      datetime: data.datetime || util.nowISO(), coach: data.coach || (CFG.gym.coach || 'Professor'),
+    }).select().single();
+    return ins;
+  };
+  SB.advanceGoal = async function (goalId, delta) {
+    const g = (await this.sb.from('goals').select('*').eq('id', goalId).single()).data; if (!g) return null;
+    const progress = Math.max(0, Math.min(g.target, g.progress + (delta || 1)));
+    const { data } = await this.sb.from('goals').update({ progress }).eq('id', goalId).select().single();
+    return data;
+  };
+  SB.deleteGoal = async function (goalId) { await this.sb.from('goals').delete().eq('id', goalId); return { ok: true }; };
   SB.checkinsToday = async function (classId) {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     let q = this.sb.from('checkins').select('*', { count: 'exact', head: true }).gte('at', start.toISOString());
@@ -461,7 +565,7 @@ window.Arcore = window.Arcore || {};
   };
   SB.listGoals = async function (memberId) { const { data } = await this.sb.from('goals').select('*').eq('member_id', memberId); return data || []; };
   SB.createGoal = async function (memberId, d) {
-    const { data } = await this.sb.from('goals').insert({ member_id: memberId, title: d.title, target: d.target || 1, progress: 0, period: d.period || 'semana', icon: d.icon || 'target' }).select().single();
+    const { data } = await this.sb.from('goals').insert({ member_id: memberId, title: d.title, target: d.target || 1, progress: 0, period: d.period || 'semana', icon: d.icon || 'target', kind: d.kind || 'custom' }).select().single();
     return data;
   };
   SB.leaderboard = async function () {
