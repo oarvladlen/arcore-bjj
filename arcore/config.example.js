@@ -10,7 +10,7 @@ window.ARCORE_CONFIG = {
   gym: {
     name: 'ARCORE',
     tagline: 'JIU-JÍTSU · SANTOS',
-    coach: 'Mestre Ricardo',
+    coach: 'Anthony Depadua',
     ember: '#EA5A2C',
     gold: '#D7AA4C',
   },
@@ -26,9 +26,9 @@ window.ARCORE_CONFIG = {
     redirectUrl: '',
   },
 
-  // Professor: link secreto ?password=SENHA → login automático (e-mail oculto)
+  // Professor: link secreto ?mestre=SENHA (nunca use ?password= — colide com login)
   coach: {
-    gate: 'password',
+    gate: 'mestre',
     email: 'professor@arcore.com',
   },
 

@@ -5,7 +5,7 @@
   'use strict';
   const CFG = window.ARCORE_CONFIG;
   const U = A.util;
-  const COACH = { name: (CFG.gym && CFG.gym.coach) || 'Mestre Ricardo', avatar: 'R' };
+  const COACH = { name: (CFG.gym && CFG.gym.coach) || 'Anthony Depadua', avatar: 'A' };
 
   /* ------------------------------- icons -------------------------------- */
   const ICONS = {
@@ -676,9 +676,28 @@
 
   function authEnabled() { return A.auth && A.auth.isEnabled && A.auth.isEnabled(); }
 
-  function coachGateKey() { return (CFG.coach && CFG.coach.gate) || 'password'; }
+  function coachGateKey() { return (CFG.coach && CFG.coach.gate) || 'mestre'; }
+
+  /** Strip leaked GET form fields; ?password= from login hijacks coach gate. */
+  function cleanLeakedAuthParams() {
+    const q = new URLSearchParams(window.location.search);
+    let dirty = false;
+    if (q.has('password')) { q.delete('password'); dirty = true; }
+    const leakedEmail = q.get('email');
+    if (leakedEmail && !q.get(coachGateKey())) {
+      state.pendingEmail = leakedEmail;
+      q.delete('email');
+      dirty = true;
+    }
+    if (dirty) {
+      history.replaceState(null, '', window.location.pathname +
+        (q.toString() ? '?' + q.toString() : '') + window.location.hash);
+    }
+    return leakedEmail || '';
+  }
 
   function detectCoachGate() {
+    cleanLeakedAuthParams();
     const q = new URLSearchParams(window.location.search);
     const pass = q.get(coachGateKey());
     if (pass) {
@@ -693,6 +712,8 @@
       state.coachGatePass = '';
     }
   }
+
+  function authFormOpen() { return ' method="post" action="#"'; }
 
   async function tryCoachAutoLogin() {
     if (!authEnabled() || !state.coachGatePass) return;
@@ -709,6 +730,7 @@
       if (ok) toast('Bem-vindo, professor!', 'crown');
     } catch (err) {
       toast(err.message || 'Senha incorreta', 'alert');
+      state.coachGate = false;
     } finally {
       state.authPending = false;
     }
@@ -738,14 +760,14 @@
 
     if (state.coachGate && !A.auth.recoveryMode) {
       return authShell('Área do professor',
-        '<form id="coachpassform" class="authcard">' +
+        '<form id="coachpassform" class="authcard"' + authFormOpen() + '>' +
         authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Senha do professor" autofocus>') +
         '<button class="btn gold full" type="submit">' + icon('crown', 17) + ' Entrar</button></form>');
     }
 
     if (A.auth.recoveryMode) {
       return authShell('Nova senha',
-        '<form id="recoveryform" class="authcard">' +
+        '<form id="recoveryform" class="authcard"' + authFormOpen() + '>' +
         authField('Nova senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
         '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
         icon('key-round', 17) + ' Salvar nova senha</button></form>');
@@ -756,7 +778,7 @@
       const ph = inv.phone || (A.auth.session.user.user_metadata && A.auth.session.user.user_metadata.phone) || '';
       return authShell('Quase lá, ' + esc(firstName(inv.name || 'atleta')) + '!',
         '<p class="authtxt" style="margin-bottom:14px">Confirme seu celular e crie sua senha. Depois você entra sempre com <b>e-mail + senha</b>.</p>' +
-        '<form id="invitecompleteform" class="authcard">' +
+        '<form id="invitecompleteform" class="authcard"' + authFormOpen() + '>' +
         authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(ph) + '" placeholder="(13) 99999-9999">') +
         authField('Sua senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
         marketingChecks() +
@@ -805,7 +827,7 @@
 
     if (state.authView === 'forgot') {
       return authShell('Recuperar senha',
-        '<form id="forgotform" class="authcard">' +
+        '<form id="forgotform" class="authcard"' + authFormOpen() + '>' +
         authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
         '<button class="btn full" type="submit">' + icon('mail', 17) + ' Enviar link</button>' +
         '<button type="button" class="authlink" data-act="auth-signin">Voltar ao login</button></form>');
@@ -817,7 +839,7 @@
       return authShell('Bem-vindo à Arcore',
         '<p class="authtxt" style="margin-bottom:12px">Oi <b>' + esc(firstName(inv.name)) + '</b>! Crie sua senha — leva 30 segundos.</p>' +
         '<p class="authtxt" style="margin-bottom:12px">Celular é para WhatsApp. Depois você entra com <b>e-mail + senha</b>.</p>' +
-        '<form id="signupform" class="authcard">' +
+        '<form id="signupform" class="authcard"' + authFormOpen() + '>' +
         authField('E-mail', '<input class="input" name="email" type="email" readonly value="' + esc(inv.email) + '">') +
         authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(inv.phone || '') + '" placeholder="(13) 99999-9999">') +
         authField('Crie sua senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
@@ -835,9 +857,10 @@
         '<button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Já tenho senha — entrar</button></div>');
     }
 
+    const prefillEmail = esc(state.pendingEmail || state.unconfirmedEmail || '');
     return authShell('Entrar',
-      '<form id="signinform" class="authcard">' +
-      authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com">') +
+      '<form id="signinform" class="authcard"' + authFormOpen() + '>' +
+      authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com" value="' + prefillEmail + '">') +
       authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
       '<button class="btn full" type="submit">' + icon('lock', 17) + ' Entrar</button>' +
       '<p class="authtxt" style="margin-top:10px">Entre com o <b>e-mail do convite</b>, não o celular.</p>' +
