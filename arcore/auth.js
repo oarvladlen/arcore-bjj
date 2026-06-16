@@ -74,7 +74,9 @@ window.Arcore = window.Arcore || {};
   function parseUrlAuth() {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const q = new URLSearchParams(window.location.search);
-    if (hash.get('type') === 'recovery' || q.get('type') === 'recovery') auth.recoveryMode = true;
+    // type=recovery survives implicit flow; ?recovery=1 is our marker that survives PKCE.
+    if (hash.get('type') === 'recovery' || q.get('type') === 'recovery' ||
+        q.get('recovery') === '1' || hash.get('recovery') === '1') auth.recoveryMode = true;
     if (hash.get('type') === 'invite') auth.inviteMode = true;
     const err = q.get('error') || hash.get('error');
     const errDesc = q.get('error_description') || hash.get('error_description');
@@ -88,7 +90,7 @@ window.Arcore = window.Arcore || {};
 
   auth.cleanAuthUrl = function () {
     const url = new URL(window.location.href);
-    ['code', 'type', 'error', 'error_description'].forEach((k) => url.searchParams.delete(k));
+    ['code', 'type', 'error', 'error_description', 'recovery'].forEach((k) => url.searchParams.delete(k));
     const hash = url.hash.replace(/^#/, '');
     if (hash && (hash.includes('access_token') || hash.includes('error'))) url.hash = '';
     history.replaceState(null, '', url.pathname + url.search + url.hash);
@@ -105,9 +107,13 @@ window.Arcore = window.Arcore || {};
   };
 
   auth.needsPasswordSetup = function () {
+    // Recovery (reset password) is NOT invite setup, even for invited users.
+    if (auth.recoveryMode) return false;
     if (!auth.session || !auth.session.user) return false;
-    const user = auth.session.user;
-    if (user.invited_at) return true;
+    // Only prompt to set a password in a genuine invite CONTEXT. Do not key off
+    // user.invited_at — Supabase never clears it, so an already-onboarded student
+    // (e.g. doing a password reset) would be wrongly sent to the invite form.
+    if (auth.inviteMode || auth.inviteToken) return true;
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     return hash.get('type') === 'invite';
   };
@@ -156,7 +162,8 @@ window.Arcore = window.Arcore || {};
       }
       if (session) {
         await auth.loadProfile();
-        if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        if (!auth.recoveryMode &&
+            (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
           await auth.tryAcceptInvite();
         }
       } else auth.profile = null;
@@ -172,10 +179,10 @@ window.Arcore = window.Arcore || {};
     auth.session = session;
     if (session) {
       await auth.loadProfile();
-      await auth.tryAcceptInvite();
       try {
         if (sessionStorage.getItem('arcore.recovery')) auth.recoveryMode = true;
       } catch (e) { /* ignore */ }
+      if (!auth.recoveryMode) await auth.tryAcceptInvite();
     }
 
     auth.ready = true;
@@ -261,7 +268,11 @@ window.Arcore = window.Arcore || {};
         marketing_whatsapp: extras.marketing_whatsapp,
       }).eq('id', auth.profile.member_id);
     }
+    // Invite consumed — clear context so needsPasswordSetup() stops firing.
     auth.inviteMode = false;
+    auth.inviteToken = null;
+    auth.inviteData = null;
+    try { sessionStorage.removeItem('arcore.invite'); } catch (e) { /* ignore */ }
     if (window.location.search.includes('invite=')) {
       const u = new URL(window.location.href);
       u.searchParams.delete('invite');
@@ -333,9 +344,11 @@ window.Arcore = window.Arcore || {};
 
   auth.resetPasswordRequest = async function (email) {
     if (!auth.client) throw new Error('Auth não configurado');
+    const base = auth.baseRedirect();
+    const redirectTo = base + (base.includes('?') ? '&' : '?') + 'recovery=1';
     const { error } = await auth.client.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
-      { redirectTo: auth.baseRedirect() }
+      { redirectTo }
     );
     if (error) throw error;
     try { sessionStorage.setItem('arcore.recovery', email.trim().toLowerCase()); } catch (e) { /* ignore */ }

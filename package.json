@@ -1,0 +1,10 @@
+{
+  "name": "arcore-bjj",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arcore — PWA da academia de Jiu-Jítsu (app do aluno + CRM do professor)",
+  "type": "module",
+  "scripts": {
+    "test": "node arcore/tests/smoke.mjs"
+  }
+}

@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Smoke tests
+        run: node arcore/tests/smoke.mjs
+
       - name: Inject Supabase config
         working-directory: arcore
         env:
