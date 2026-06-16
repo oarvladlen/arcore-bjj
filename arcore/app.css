@@ -29,8 +29,8 @@ button{font-family:inherit}
 /* header */
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;position:relative;z-index:2;gap:10px}
 .brand{font-family:'Anton';font-size:23px;letter-spacing:.14em;line-height:1;color:var(--text)}
-.brand .om{display:inline-block;width:.62em;height:.62em;border:.15em solid currentColor;border-radius:50%;
-  position:relative;box-sizing:border-box;vertical-align:-.05em;margin:0 .03em}
+.brand .om{display:inline-block;width:.74em;height:.74em;border:.15em solid currentColor;border-radius:50%;
+  position:relative;box-sizing:border-box;vertical-align:-.1em;margin:0 .02em}
 .brand .om::after{content:"";position:absolute;inset:24%;background:var(--ember);border-radius:1px}
 .brand small{display:block;font-family:'Archivo';font-weight:600;font-size:9px;letter-spacing:.32em;color:var(--faint);margin-top:4px}
 .hdr-right{display:flex;align-items:center;gap:9px}
@@ -190,7 +190,7 @@ button{font-family:inherit}
 .quickrow .btn{flex:1}
 
 .roster{display:flex;flex-direction:column;gap:8px}
-.ritem{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 13px;cursor:pointer;text-align:left;width:100%}
+.ritem{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 13px;cursor:pointer;text-align:left;width:100%;color:var(--text)}
 .ritem:active{transform:scale(.99)}
 .ritem .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#1a130c;flex:none;font-size:15px}
 .ritem .nm{flex:1;min-width:0}
@@ -254,8 +254,8 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 /* login */
 .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:30px 24px 60px;position:relative;z-index:2}
 .login .logo{font-family:'Anton';font-size:46px;letter-spacing:.12em;text-align:center;color:var(--text)}
-.login .logo .om{display:inline-block;width:.6em;height:.6em;border:.13em solid currentColor;border-radius:50%;
-  position:relative;box-sizing:border-box;vertical-align:-.02em}
+.login .logo .om{display:inline-block;width:.72em;height:.72em;border:.13em solid currentColor;border-radius:50%;
+  position:relative;box-sizing:border-box;vertical-align:-.08em}
 .login .logo .om::after{content:"";position:absolute;inset:25%;background:var(--ember);border-radius:2px}
 .login .tl{text-align:center;color:var(--faint);font-weight:600;font-size:11px;letter-spacing:.34em;margin:6px 0 38px}
 .login h2{font-size:16px;font-weight:700;text-align:center;color:var(--muted);margin-bottom:18px}
