@@ -51,6 +51,14 @@ const baseCfg = {
   auth: { enabled: true, redirectUrl: 'https://app.example.com/' },
   coach: { gate: 'mestre', email: 'professor@arcore.com' },
   rules: { xpCheckin: 50, xpMicroLesson: 10, xpCompeticao: 200, classesPerStripe: 30, atRiskDays: 10 },
+  schedule: {
+    weekday: [
+      { time: '12:15', label: 'Treino' }, { time: '16:00', label: 'Treino' },
+      { time: '17:00', label: 'Treino' }, { time: '18:00', label: 'Treino' },
+      { time: '19:00', label: 'Kids', kids: true }, { time: '20:00', label: 'Treino' },
+    ],
+    saturday: [{ time: '11:00', label: 'Treino' }],
+  },
 };
 const loc = (search = '', hash = '') => ({ href: 'https://app.example.com/' + search + hash, search, hash, pathname: '/', origin: 'https://app.example.com' });
 
@@ -184,6 +192,21 @@ group('util.stripe / risk / normalizePhone / video ids');
   ok('embedHtml youtube → iframe', U.embedHtml('https://youtu.be/2oVHEcyJhIM').includes('youtube-nocookie.com/embed/2oVHEcyJhIM'));
   ok('embedHtml unknown → link', U.embedHtml('https://example.com/v.mp4').includes('Abrir vídeo'));
   eq('beltOrder length', U.beltOrder.length, 5);
+}
+
+group('util.daySlots — fixed weekly schedule');
+{
+  const { ctx, win } = makeContext(baseCfg, loc());
+  loadInto(ctx, 'data.js');
+  const U = win.Arcore.util;
+  // 2026-06-15 = Monday, 06-13 = Saturday, 06-14 = Sunday
+  const mon = U.daySlots('2026-06-15T10:00:00');
+  eq('weekday → 6 classes', mon.length, 6);
+  eq('first slot 12:15', mon[0].time, '12:15');
+  eq('kids slot flagged', mon[4].kids, true);
+  eq('deterministic slot id', mon[0].id, 'c_20260615_1215');
+  eq('saturday → 1 class', U.daySlots('2026-06-13T10:00:00').length, 1);
+  eq('sunday → folga (0)', U.daySlots('2026-06-14T10:00:00').length, 0);
 }
 
 /* ---- report ---- */

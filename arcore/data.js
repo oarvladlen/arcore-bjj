@@ -75,6 +75,30 @@ window.Arcore = window.Arcore || {};
       if (m.league && m.belt) m.league = m.belt;
       return events;
     },
+    // ----- class schedule (grade horária fixa) -----
+    ymd(d) {
+      d = d || new Date();
+      return '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    },
+    /* Today's class slots from CFG.schedule. Sunday (0) = folga → []. */
+    daySlots(ref) {
+      const d = ref ? new Date(ref) : new Date();
+      const dow = d.getDay(); // 0 Sun .. 6 Sat
+      const sc = CFG.schedule || {};
+      let defs = [];
+      if (dow >= 1 && dow <= 5) defs = sc.weekday || [];
+      else if (dow === 6) defs = sc.saturday || [];
+      return (defs || []).map((s) => {
+        const [h, m] = s.time.split(':').map(Number);
+        const dt = new Date(d); dt.setHours(h, m || 0, 0, 0);
+        return {
+          id: 'c_' + util.ymd(d) + '_' + s.time.replace(':', ''),
+          time: s.time, title: s.label || 'Treino',
+          type: s.kids ? 'kids' : 'gi', kids: !!s.kids,
+          datetime: dt.toISOString(), coach: (CFG.gym && CFG.gym.coach) || 'Professor',
+        };
+      });
+    },
     // ----- video embed (YouTube / Vimeo / link) -----
     ytId(url) {
       const m = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{6,})/);
@@ -187,10 +211,10 @@ window.Arcore = window.Arcore || {};
     ];
 
     const checkins = [
-      { id: 'ck1', member_id: 'm_pedro', class_id: 'c_today', at: todayAt(19, 2) },
-      { id: 'ck2', member_id: 'm_rafa',  class_id: 'c_today', at: todayAt(19, 3) },
-      { id: 'ck3', member_id: 'm_ana',   class_id: 'c_today', at: todayAt(19, 1) },
-      { id: 'ck4', member_id: 'm_joao',  class_id: 'c_y1',    at: isoAgo(1, 19, 4) },
+      { id: 'ck1', member_id: 'm_pedro', class_id: 'c_y1', at: isoAgo(1, 19, 2) },
+      { id: 'ck2', member_id: 'm_rafa',  class_id: 'c_y1', at: isoAgo(1, 19, 3) },
+      { id: 'ck3', member_id: 'm_ana',   class_id: 'c_y1', at: isoAgo(1, 19, 1) },
+      { id: 'ck4', member_id: 'm_joao',  class_id: 'c_y1', at: isoAgo(1, 19, 4) },
     ];
 
     // earned achievements per member (for the trophy grid)
@@ -238,7 +262,17 @@ window.Arcore = window.Arcore || {};
     // keep "aula de hoje" pointing at today
     const c = s.classes.find((x) => x.id === 'c_today');
     if (c) c.datetime = todayAt(19, 0);
-    this.S = s; await this._save(); return this;
+    this.S = s;
+    // materialize today's grade horária + seed a few check-ins so the demo
+    // "Chamada" (roll call) isn't empty when the professor opens it.
+    this._ensureSlots();
+    const slots = util.daySlots();
+    if (slots.length && !this.S.checkins.some((ck) => slots.some((sl) => sl.id === ck.class_id))) {
+      const demo = ['m_pedro', 'm_rafa', 'm_ana', 'm_lucas', 'm_bruna'];
+      const slot = slots[slots.length - 1]; // last adult class of the day
+      demo.forEach((mid) => this.S.checkins.push({ id: util.uid('ck'), member_id: mid, class_id: slot.id, at: util.nowISO(), verified: null }));
+    }
+    await this._save(); return this;
   };
   LocalDB.prototype.reset = async function () { this.S = seedState(); await this._save(); return this; };
   LocalDB.prototype._save = function () { return idbPut('db', this.S); };
@@ -250,18 +284,53 @@ window.Arcore = window.Arcore || {};
     Object.assign(m, patch); await this._save(); return decorateMember(m);
   };
 
+  LocalDB.prototype._ensureSlots = function () {
+    util.daySlots().forEach((s) => {
+      if (!this.S.classes.find((c) => c.id === s.id)) {
+        this.S.classes.push({ id: s.id, title: s.title, type: s.type, datetime: s.datetime, coach: s.coach });
+      }
+    });
+  };
+  LocalDB.prototype.listTodayClasses = async function () {
+    this._ensureSlots(); await this._save();
+    return util.daySlots().map((s) => Object.assign({}, s,
+      { checkins: this.S.checkins.filter((c) => c.class_id === s.id).length }));
+  };
   LocalDB.prototype.todayClass = async function () {
-    const c = this.S.classes.find((x) => util.sameDay(x.datetime));
-    return c ? util.clone(c) : null;
+    const s = util.daySlots(); return s.length ? Object.assign({}, s[0]) : null;
   };
   LocalDB.prototype.listClasses = async function () { return util.clone(this.S.classes); };
+  LocalDB.prototype.classCheckins = async function (classId) {
+    return this.S.checkins.filter((c) => c.class_id === classId)
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .map((c) => { const m = this.S.members.find((x) => x.id === c.member_id); return Object.assign(util.clone(c), { member: m ? decorateMember(m) : null }); });
+  };
+  LocalDB.prototype._adjustCredit = function (m, sign) {
+    m.total_classes = Math.max(0, (m.total_classes || 0) + sign);
+    m.classes_since_stripe = Math.max(0, (m.classes_since_stripe || 0) + sign);
+    m.mat_hours = Math.max(0, (m.mat_hours || 0) + sign * 1.5);
+    m.xp = Math.max(0, (m.xp || 0) + sign * R.xpCheckin);
+    m.week_xp = Math.max(0, (m.week_xp || 0) + sign * R.xpCheckin);
+  };
+  LocalDB.prototype.verifyCheckin = async function (checkinId, present) {
+    const c = this.S.checkins.find((x) => x.id === checkinId); if (!c) return null;
+    const wasCredited = c.verified !== false;
+    c.verified = present;
+    if (wasCredited !== present) {
+      const m = this.S.members.find((x) => x.id === c.member_id);
+      if (m) this._adjustCredit(m, present ? 1 : -1);
+    }
+    await this._save();
+    return Object.assign(util.clone(c), { member: (function (S) { const m = S.members.find((x) => x.id === c.member_id); return m ? decorateMember(m) : null; })(this.S) });
+  };
 
   LocalDB.prototype.isCheckedInToday = async function (memberId, classId) {
     return this.S.checkins.some((c) => c.member_id === memberId && c.class_id === classId && util.sameDay(c.at));
   };
   LocalDB.prototype.checkIn = async function (memberId, classId) {
     if (await this.isCheckedInToday(memberId, classId)) return { already: true, xp: 0 };
-    this.S.checkins.push({ id: util.uid('ck'), member_id: memberId, class_id: classId, at: util.nowISO() });
+    this._ensureSlots();
+    this.S.checkins.push({ id: util.uid('ck'), member_id: memberId, class_id: classId, at: util.nowISO(), verified: null });
     const m = this.S.members.find((x) => x.id === memberId);
     let promotions = [];
     let goalsAdvanced = 0;
@@ -389,7 +458,7 @@ window.Arcore = window.Arcore || {};
     const trial = ms.filter((m) => m.status === 'experimental');
     const atRisk = ms.filter((m) => util.risk(m));
     const ativos = ms.filter((m) => m.status === 'ativo' && !util.risk(m));
-    return { total: ms.length, ativos: ativos.length, experimentais: trial.length, emRisco: atRisk.length, checkinsHoje: await this.checkinsToday('c_today') };
+    return { total: ms.length, ativos: ativos.length, experimentais: trial.length, emRisco: atRisk.length, checkinsHoje: await this.checkinsToday() };
   };
   LocalDB.prototype.atRiskMembers = async function () {
     return this.S.members.filter((m) => util.risk(m))
@@ -439,11 +508,40 @@ window.Arcore = window.Arcore || {};
     return data ? decorateMember(data) : null;
   };
   SB.todayClass = async function () {
+    const s = util.daySlots(); return s.length ? Object.assign({}, s[0]) : null;
+  };
+  SB.listTodayClasses = async function () {
+    const slots = util.daySlots();
+    if (!slots.length) return [];
     const start = new Date(); start.setHours(0, 0, 0, 0);
-    const end = new Date(); end.setHours(23, 59, 59, 999);
-    const { data } = await this.sb.from('classes').select('*')
-      .gte('datetime', start.toISOString()).lte('datetime', end.toISOString()).order('datetime').limit(1);
-    return (data && data[0]) || null;
+    const { data } = await this.sb.from('checkins').select('class_id').gte('at', start.toISOString());
+    const counts = {};
+    (data || []).forEach((c) => { counts[c.class_id] = (counts[c.class_id] || 0) + 1; });
+    return slots.map((s) => Object.assign({}, s, { checkins: counts[s.id] || 0 }));
+  };
+  SB.classCheckins = async function (classId) {
+    const { data } = await this.sb.from('checkins').select('*, members(*)').eq('class_id', classId).order('at');
+    return (data || []).map((c) => Object.assign({}, c, { member: c.members ? decorateMember(c.members) : null }));
+  };
+  SB.verifyCheckin = async function (checkinId, present) {
+    const c = (await this.sb.from('checkins').select('member_id, verified').eq('id', checkinId).single()).data;
+    if (!c) return null;
+    const wasCredited = c.verified !== false;
+    await this.sb.from('checkins').update({ verified: present }).eq('id', checkinId);
+    if (wasCredited !== present) {
+      const m = await this.getMember(c.member_id);
+      if (m) {
+        const sign = present ? 1 : -1;
+        await this.updateMember(c.member_id, {
+          total_classes: Math.max(0, m.total_classes + sign),
+          classes_since_stripe: Math.max(0, m.classes_since_stripe + sign),
+          mat_hours: Math.max(0, m.mat_hours + sign * 1.5),
+          xp: Math.max(0, m.xp + sign * R.xpCheckin),
+          week_xp: Math.max(0, m.week_xp + sign * R.xpCheckin),
+        });
+      }
+    }
+    return { id: checkinId, verified: present };
   };
   SB.listClasses = async function () { const { data } = await this.sb.from('classes').select('*').order('datetime', { ascending: false }); return data || []; };
   SB.isCheckedInToday = async function (memberId, classId) {
@@ -452,9 +550,16 @@ window.Arcore = window.Arcore || {};
       .eq('member_id', memberId).eq('class_id', classId).gte('at', start.toISOString());
     return (count || 0) > 0;
   };
-  SB.checkIn = async function (memberId, classId) {
+  SB.checkIn = async function (memberId, classId, slot) {
     if (await this.isCheckedInToday(memberId, classId)) return { already: true, xp: 0 };
-    await this.sb.from('checkins').insert({ member_id: memberId, class_id: classId, at: util.nowISO() });
+    // Make sure the slot's class row exists (security-definer RPC; students
+    // can't insert into classes directly). No-op if already materialized.
+    if (slot) {
+      try {
+        await this.sb.rpc('ensure_class', { p_id: slot.id, p_title: slot.title, p_type: slot.type, p_datetime: slot.datetime });
+      } catch (e) { console.warn('ensure_class', e); }
+    }
+    await this.sb.from('checkins').insert({ member_id: memberId, class_id: classId, at: util.nowISO(), verified: null });
     const m = await this.getMember(memberId);
     let promotions = [];
     let goalsAdvanced = 0;

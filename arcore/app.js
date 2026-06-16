@@ -46,6 +46,9 @@
     refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
     sparkles:'<path d="M9.94 14.5A2 2 0 0 0 8.5 13.06l-5.6-1.45a.5.5 0 0 1 0-.96L8.5 9.2A2 2 0 0 0 9.94 7.76l1.45-5.6a.5.5 0 0 1 .96 0l1.45 5.6A2 2 0 0 0 15.24 9.2l5.6 1.45a.5.5 0 0 1 0 .96l-5.6 1.45a2 2 0 0 0-1.44 1.44l-1.45 5.6a.5.5 0 0 1-.96 0z"/>',
     download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    'thumbs-up':'<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
+    'thumbs-down':'<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>',
+    calendar:'<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
   };
   function icon(name, size) {
     const s = size || 20;
@@ -66,6 +69,7 @@
     db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null,
     deferredPrompt: null, authPending: false,
     authView: 'signin', coachGate: false, coachGatePass: '', pendingEmail: '', unconfirmedEmail: '',
+    presSlot: null,
   };
   let coachFilter = { q: '', seg: 'todos' };
   let rec = { mr: null, chunks: [], stream: null, timer: null, sec: 0, dataUrl: null };
@@ -106,8 +110,8 @@
      ===================================================================== */
   async function viewInicio() {
     const db = state.db, m = state.member;
-    const [cls, posts, awards, saved] = await Promise.all([db.todayClass(), db.listPosts(), db.listAwards(), db.listSaved(m.id)]);
-    const checked = cls ? await db.isCheckedInToday(m.id, cls.id) : false;
+    const [slots, posts, awards, saved] = await Promise.all([db.listTodayClasses(), db.listPosts(), db.listAwards(), db.listSaved(m.id)]);
+    const myChecks = await Promise.all(slots.map((s) => db.isCheckedInToday(m.id, s.id)));
     const st = U.stripe(m);
 
     let h = '<section class="screen">';
@@ -117,12 +121,19 @@
       '<div class="sub">' + esc(m.beltLabel) + ' · ' + m.stripes + 'º para ' + (m.stripes + 1) + 'º grau</div>' +
       '<div class="bar"><i style="width:' + st.pct + '%"></i></div></div>';
 
-    if (cls) {
-      h += '<div class="eyebrow">' + icon('clock', 13) + ' Aula de hoje</div>';
-      h += '<div class="card checkin"><div class="ci"><div class="t">' + esc(cls.title) + '</div>' +
-        '<div class="d">' + icon('clock', 13) + ' Hoje, ' + hourLabel(cls.datetime) + ' · ' + esc(cls.coach) + '</div></div>' +
-        '<button class="btn ' + (checked ? 'done' : '') + '" data-act="checkin">' +
-        icon('check', 18) + ' ' + (checked ? 'Check-in feito' : 'Fazer check-in') + '</button></div>';
+    h += '<div class="eyebrow">' + icon('clock', 13) + ' Aulas de hoje</div>';
+    if (slots.length) {
+      h += slots.map((s, i) => {
+        const checked = myChecks[i];
+        return '<div class="slot' + (checked ? ' on' : '') + '">' +
+          '<div class="time">' + esc(s.time) + '</div>' +
+          '<div class="g"><b>' + esc(s.title) + '</b>' +
+          '<div class="s">' + (checked ? 'Você fez check-in' : 'Toque para confirmar presença') + '</div></div>' +
+          '<button class="ci-btn' + (checked ? ' done' : '') + '" data-act="checkin:' + s.id + '" aria-label="Check-in">' +
+          icon('check', 18) + '</button></div>';
+      }).join('');
+    } else {
+      h += '<div class="empty">Sem aula hoje. Bom descanso! 🥋</div>';
     }
     if (state.deferredPrompt) {
       h += '<div class="installbar">' + icon('download', 18) +
@@ -261,7 +272,7 @@
      ===================================================================== */
   async function viewPainel() {
     const db = state.db;
-    const [s, atRisk, cls] = await Promise.all([db.coachStats(), db.atRiskMembers(), db.todayClass()]);
+    const [s, atRisk, slots] = await Promise.all([db.coachStats(), db.atRiskMembers(), db.listTodayClasses()]);
     let h = '<section class="screen">';
     h += '<p class="hello">Olá, <b>' + esc(firstName(COACH.name)) + '</b> — sua academia hoje.</p>';
     h += '<div class="statgrid">' +
@@ -275,16 +286,17 @@
     h += '<div class="eyebrow">' + icon('alert', 13) + ' Recuperar (win-back)<span class="more">' + atRisk.length + ' aluno(s)</span></div>';
     h += atRisk.length ? atRisk.map(winRow).join('') : '<div class="empty">Ninguém em risco. 🔥<br/>Todos treinando em dia.</div>';
 
-    const todayCls = cls && U.sameDay(cls.datetime);
     h += '<div class="eyebrow">' + icon('flame', 13) + ' Hoje no tatame</div>';
-    if (todayCls) {
-      h += '<div class="card"><div class="ci"><div class="t">' + esc(cls.title) + '</div>' +
-        '<div class="d">' + icon('clock', 13) + ' Hoje, ' + hourLabel(cls.datetime) + ' · ' + s.checkinsHoje + ' check-in(s)</div></div>' +
-        '<button class="btn sec sm" data-act="nav:alunos" style="margin-top:12px">' + icon('users', 16) + ' Marcar presença</button></div>';
+    if (slots.length) {
+      const grid = slots.map((sl) => '<div class="slotmini' + (sl.checkins ? ' has' : '') + '">' +
+        '<b>' + esc(sl.time) + '</b><span>' + sl.checkins + '</span></div>').join('');
+      h += '<div class="card"><div class="ci"><div class="t">' + slots.length + ' aula(s) hoje · ' + s.checkinsHoje + ' check-in(s)</div>' +
+        '<div class="d">' + icon('clock', 13) + ' Confira a presença de cada turma.</div></div>' +
+        '<div class="slotgrid">' + grid + '</div>' +
+        '<button class="btn sm full" data-act="nav:presenca" style="margin-top:12px">' + icon('thumbs-up', 16) + ' Fazer chamada</button></div>';
     } else {
-      h += '<div class="card"><div class="ci"><div class="t">Nenhuma aula hoje</div>' +
-        '<div class="d">' + icon('alert', 13) + ' Crie a aula para liberar o check-in dos alunos.</div></div>' +
-        '<button class="btn sm" data-act="newclass" style="margin-top:12px">' + icon('plus', 16) + ' Criar aula de hoje</button></div>';
+      h += '<div class="card"><div class="ci"><div class="t">Sem aula hoje</div>' +
+        '<div class="d">' + icon('calendar', 13) + ' Domingo é folga. Descanso é treino também. 🥋</div></div></div>';
     }
     h += '</section>';
     return h;
@@ -414,6 +426,50 @@
   }
   function field(label, inner) { return '<div class="field"><label>' + label + '</label>' + inner + '</div>'; }
 
+  /* ----- CHAMADA (attendance roll-call) ----- */
+  async function viewPresenca() {
+    const db = state.db;
+    const slots = await db.listTodayClasses();
+    let h = '<section class="screen">';
+    h += '<div class="eyebrow" style="margin-top:14px">' + icon('calendar', 13) + ' Chamada de hoje</div>';
+    if (!slots.length) {
+      h += '<div class="empty">Sem aula hoje — domingo é folga. 🥋</div></section>';
+      return h;
+    }
+    if (!state.presSlot || !slots.find((s) => s.id === state.presSlot)) {
+      const withChecks = slots.find((s) => s.checkins > 0);
+      state.presSlot = (withChecks || slots[0]).id;
+    }
+    h += '<div class="slotsel">' + slots.map((s) =>
+      '<button class="' + (state.presSlot === s.id ? 'on' : '') + '" data-act="presslot:' + s.id + '">' +
+      esc(s.time) + (s.checkins ? '<small>' + s.checkins + '</small>' : '') + '</button>').join('') + '</div>';
+
+    const cur = slots.find((s) => s.id === state.presSlot);
+    const checks = await db.classCheckins(state.presSlot);
+    h += '<p class="hello" style="margin:16px 2px 10px"><b>' + esc(cur.title) + '</b> · ' + esc(cur.time) +
+      ' — confirme quem realmente treinou. Quem não estava perde a presença.</p>';
+    if (!checks.length) {
+      h += '<div class="empty">Ninguém fez check-in nesta aula ainda.</div>';
+    } else {
+      h += '<div class="roster">' + checks.map(presRow).join('') + '</div>';
+    }
+    h += '</section>';
+    return h;
+  }
+  function presRow(c) {
+    const m = c.member || {};
+    const v = c.verified;
+    return '<div class="presrow ' + (v === true ? 'ok' : v === false ? 'no' : '') + '">' +
+      '<div class="av" style="background:' + (m.beltColor || 'var(--line2)') + ';' + (m.belt === 'branca' ? 'color:#3a2e1c' : '') + '">' + esc(m.avatar || '?') + '</div>' +
+      '<div class="nm"><b>' + esc(m.name || 'Aluno') + '</b><div class="meta">' +
+      '<span>' + esc(m.beltShort || '') + (m.stripes != null ? ' · ' + m.stripes + 'º' : '') + '</span>' +
+      '<span>' + icon('clock', 12) + ' ' + hourLabel(c.at) + '</span></div></div>' +
+      '<div class="vbtns">' +
+      '<button class="vb up' + (v === true ? ' on' : '') + '" data-act="verify:' + c.id + '|up" aria-label="Estava presente">' + icon('thumbs-up', 17) + '</button>' +
+      '<button class="vb down' + (v === false ? ' on' : '') + '" data-act="verify:' + c.id + '|down" aria-label="Não estava">' + icon('thumbs-down', 17) + '</button>' +
+      '</div></div>';
+  }
+
   async function viewSelos() {
     const badges = await state.db.listBadges();
     let h = '<section class="screen">';
@@ -430,7 +486,7 @@
      CHROME (header + nav) + ROUTER
      ===================================================================== */
   const MEMBER_TABS = [['inicio', 'Início', 'home'], ['progresso', 'Progresso', 'trending-up'], ['ranking', 'Ranking', 'trophy']];
-  const COACH_TABS = [['painel', 'Painel', 'clipboard'], ['alunos', 'Alunos', 'users'], ['postar', 'Postar', 'video'], ['selos', 'Selos', 'award']];
+  const COACH_TABS = [['painel', 'Painel', 'clipboard'], ['presenca', 'Chamada', 'thumbs-up'], ['alunos', 'Alunos', 'users'], ['postar', 'Postar', 'video'], ['selos', 'Selos', 'award']];
 
   function renderChrome() {
     const hdr = $('#hdr'), nav = $('#nav');
@@ -478,6 +534,7 @@
         case 'alunos': html = await viewAlunos(); break;
         case 'aluno': html = await viewAluno(); break;
         case 'postar': html = await viewPostar(); break;
+        case 'presenca': html = await viewPresenca(); break;
         case 'selos': html = await viewSelos(); break;
         default: html = '<section class="screen"><div class="empty">…</div></section>';
       }
@@ -950,7 +1007,7 @@
       case 'resetdemo': closeSheet(); await state.db.reset(); toast('Demonstração reiniciada', 'refresh'); render(); break;
       case 'install': doInstall(); break;
 
-      case 'checkin': await doCheckin(); break;
+      case 'checkin': await doCheckin(arg); break;
       case 'save': await doSave(arg, t); break;
       case 'react': await doReact(arg, t); break;
       case 'playvid': doPlayVid(t); break;
@@ -973,19 +1030,29 @@
       case 'newclass': openClassSheet(); break;
       case 'goalstep': await doGoalStep(arg, t); break;
       case 'delgoal': await doDeleteGoal(arg); break;
+      case 'presslot': state.presSlot = arg; render(); break;
+      case 'verify': await doVerify(arg); break;
       default: break;
     }
   }
 
-  async function doCheckin() {
-    const cls = await state.db.todayClass();
-    if (!cls) { toast('Nenhuma aula hoje. Fale com o professor.', 'alert'); return; }
-    const r = await state.db.checkIn(state.member.id, cls.id);
-    if (r.already) { toast('Você já fez check-in hoje', 'check'); }
+  async function doCheckin(classId) {
+    const slots = await state.db.listTodayClasses();
+    const slot = (classId && slots.find((s) => s.id === classId)) || slots[0] || (await state.db.todayClass());
+    if (!slot) { toast('Nenhuma aula hoje.', 'alert'); return; }
+    const r = await state.db.checkIn(state.member.id, slot.id, slot);
+    if (r.already) { toast('Você já fez check-in nessa aula', 'check'); }
     else if (r.goalsAdvanced) { toast('Check-in feito · +' + r.xp + ' XP · meta avançou 🎯', 'zap'); }
     else { toast('Check-in feito · +' + r.xp + ' XP', 'zap'); }
     await render();
     if (r.promotions && r.promotions.length) celebratePromotion(r.promotions, state.member.name);
+  }
+  async function doVerify(arg) {
+    const [id, dir] = arg.split('|');
+    const present = dir === 'up';
+    await state.db.verifyCheckin(id, present);
+    toast(present ? 'Presença confirmada ✓' : 'Marcado como ausente · presença removida', present ? 'check' : 'alert');
+    render();
   }
 
   /** Big celebratory modal when a check-in earns a stripe or a new belt. */
@@ -1052,9 +1119,10 @@
     window.open(waLink(m, txt), '_blank');
   }
   async function doPresent(id) {
-    const cls = await state.db.todayClass();
-    if (!cls) { toast('Crie a aula de hoje primeiro.', 'alert'); return; }
-    const r = await state.db.checkIn(id, cls.id);
+    const slots = await state.db.listTodayClasses();
+    const cls = slots[0] || (await state.db.todayClass());
+    if (!cls) { toast('Sem aula hoje.', 'alert'); return; }
+    const r = await state.db.checkIn(id, cls.id, cls);
     toast(r.already ? 'Já estava presente hoje' : 'Presença registrada · +' + r.xp + ' XP', 'check');
     await render();
     if (r.promotions && r.promotions.length && r.member) {
