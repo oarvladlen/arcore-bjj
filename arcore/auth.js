@@ -17,6 +17,7 @@ window.Arcore = window.Arcore || {};
     inviteToken: null,
     inviteData: null,
     listeners: [],
+    lastAuthError: null,
   });
 
   function emit() {
@@ -39,12 +40,19 @@ window.Arcore = window.Arcore || {};
   auth.getMemberId = function () { return auth.profile && auth.profile.member_id; };
 
   auth.redirectTo = function () {
-    const base = (CFG.auth && CFG.auth.redirectUrl) ||
-      window.location.origin + window.location.pathname;
+    const base = auth.baseRedirect();
     if (auth.inviteToken) {
       const sep = base.includes('?') ? '&' : '?';
       return base + sep + 'invite=' + encodeURIComponent(auth.inviteToken);
     }
+    return base;
+  };
+
+  auth.baseRedirect = function () {
+    let base = (CFG.auth && CFG.auth.redirectUrl) ||
+      window.location.origin + window.location.pathname;
+    base = base.replace(/index\.html$/, '');
+    if (!base.endsWith('/')) base += '/';
     return base;
   };
 
@@ -66,14 +74,25 @@ window.Arcore = window.Arcore || {};
   function parseUrlAuth() {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const q = new URLSearchParams(window.location.search);
-    if (hash.get('type') === 'recovery') auth.recoveryMode = true;
+    if (hash.get('type') === 'recovery' || q.get('type') === 'recovery') auth.recoveryMode = true;
     if (hash.get('type') === 'invite') auth.inviteMode = true;
+    const err = q.get('error') || hash.get('error');
+    const errDesc = q.get('error_description') || hash.get('error_description');
+    if (err) auth.lastAuthError = decodeURIComponent((errDesc || err).replace(/\+/g, ' '));
     const tok = q.get('invite');
     if (tok) {
       auth.inviteToken = tok;
       auth.inviteMode = true;
     }
   }
+
+  auth.cleanAuthUrl = function () {
+    const url = new URL(window.location.href);
+    ['code', 'type', 'error', 'error_description'].forEach((k) => url.searchParams.delete(k));
+    const hash = url.hash.replace(/^#/, '');
+    if (hash && (hash.includes('access_token') || hash.includes('error'))) url.hash = '';
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  };
 
   auth.loadInvite = async function (token) {
     if (!auth.client || !token) return null;
@@ -126,21 +145,15 @@ window.Arcore = window.Arcore || {};
       },
     });
 
-    if (auth.inviteToken && !auth.inviteData) {
-      await auth.loadInvite(auth.inviteToken);
-    }
-
-    const { data: { session } } = await auth.client.auth.getSession();
-    auth.session = session;
-    if (session) {
-      await auth.loadProfile();
-      await auth.tryAcceptInvite();
-    }
-
     auth.client.auth.onAuthStateChange(async (event, session) => {
       auth.session = session;
       if (event === 'PASSWORD_RECOVERY') auth.recoveryMode = true;
       if (event === 'USER_UPDATED' && session) auth.inviteMode = false;
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+        if (/[?&]code=/.test(window.location.search) || window.location.hash.includes('access_token')) {
+          auth.cleanAuthUrl();
+        }
+      }
       if (session) {
         await auth.loadProfile();
         if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
@@ -150,6 +163,20 @@ window.Arcore = window.Arcore || {};
       auth.ready = true;
       emit();
     });
+
+    if (auth.inviteToken && !auth.inviteData) {
+      await auth.loadInvite(auth.inviteToken);
+    }
+
+    const { data: { session } } = await auth.client.auth.getSession();
+    auth.session = session;
+    if (session) {
+      await auth.loadProfile();
+      await auth.tryAcceptInvite();
+      try {
+        if (sessionStorage.getItem('arcore.recovery')) auth.recoveryMode = true;
+      } catch (e) { /* ignore */ }
+    }
 
     auth.ready = true;
     return auth;
@@ -308,9 +335,10 @@ window.Arcore = window.Arcore || {};
     if (!auth.client) throw new Error('Auth não configurado');
     const { error } = await auth.client.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
-      { redirectTo: auth.redirectTo() }
+      { redirectTo: auth.baseRedirect() }
     );
     if (error) throw error;
+    try { sessionStorage.setItem('arcore.recovery', email.trim().toLowerCase()); } catch (e) { /* ignore */ }
   };
 
   auth.updatePassword = async function (password) {
@@ -318,9 +346,10 @@ window.Arcore = window.Arcore || {};
     const { data, error } = await auth.client.auth.updateUser({ password });
     if (error) throw error;
     auth.recoveryMode = false;
-    if (window.location.hash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
+    try { sessionStorage.removeItem('arcore.recovery'); } catch (e) { /* ignore */ }
+    auth.cleanAuthUrl();
+    await auth.loadProfile();
+    emit();
     return data;
   };
 

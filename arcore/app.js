@@ -632,9 +632,12 @@
         render();
         try {
           await A.auth.updatePassword(pw);
-          A.auth.recoveryMode = false;
-          state.authView = 'signin';
-          toast('Senha atualizada! Entre com a nova senha', 'check');
+          const ok = await applyAuthSession();
+          if (ok) toast('Senha atualizada! Bem-vindo 🥋', 'check');
+          else {
+            state.authView = 'signin';
+            toast('Senha salva! Entre com e-mail e nova senha.', 'check');
+          }
         } catch (err) {
           toast(err.message || 'Erro ao salvar senha', 'alert');
         } finally {
@@ -802,7 +805,7 @@
         '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
         '<h2>' + (isReset ? 'Link enviado' : 'Confirme seu e-mail') + '</h2>' +
         '<p class="authtxt">' + (isReset
-          ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>.'
+          ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>. Clique nele para definir uma nova senha. Verifique também o spam.'
           : 'Enviamos confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique no link e depois entre com <b>e-mail + senha</b> (não use o celular).') +
         '</p><button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Voltar ao login</button></div>');
     }
@@ -858,7 +861,10 @@
     }
 
     const prefillEmail = esc(state.pendingEmail || state.unconfirmedEmail || '');
-    return authShell('Entrar',
+    const authErr = A.auth && A.auth.lastAuthError
+      ? '<p class="authtxt" style="color:var(--ember);margin-bottom:12px">' + esc(A.auth.lastAuthError) + '</p>'
+      : '';
+    return authShell('Entrar', authErr +
       '<form id="signinform" class="authcard"' + authFormOpen() + '>' +
       authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com" value="' + prefillEmail + '">') +
       authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
@@ -1189,6 +1195,10 @@
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.deferredPrompt = e; if (state.screen === 'inicio') render(); });
 
     if (A.auth) await A.auth.init();
+    if (A.auth && A.auth.lastAuthError) {
+      toast(A.auth.lastAuthError, 'alert');
+      A.auth.lastAuthError = null;
+    }
     detectCoachGate();
     if (authEnabled() && state.coachGatePass) await tryCoachAutoLogin();
 
