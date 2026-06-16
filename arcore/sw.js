@@ -1,13 +1,9 @@
 /* Arcore service worker — offline app shell */
-const VERSION = 'arcore-v6';
+const VERSION = 'arcore-v7';
 const SHELL = [
   './',
   './index.html',
   './app.css',
-  './config.js',
-  './auth.js',
-  './data.js',
-  './app.js',
   './icon.svg',
   './icon-maskable.svg',
   './manifest.webmanifest',
@@ -35,7 +31,7 @@ self.addEventListener('fetch', (e) => {
   // Only handle same-origin; let CDN / Supabase / video embeds go to network.
   if (url.origin !== self.location.origin) return;
 
-  const live = /\/(app|auth|config|data)\.js$/;
+  const live = /\/(app|auth|config|data)\.js(\?|$)/;
   if (live.test(url.pathname)) {
     e.respondWith(
       fetch(req)
