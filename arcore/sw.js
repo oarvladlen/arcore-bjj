@@ -1,5 +1,5 @@
 /* Arcore service worker — offline app shell */
-const VERSION = 'arcore-v5';
+const VERSION = 'arcore-v6';
 const SHELL = [
   './',
   './index.html',
@@ -34,6 +34,22 @@ self.addEventListener('fetch', (e) => {
 
   // Only handle same-origin; let CDN / Supabase / video embeds go to network.
   if (url.origin !== self.location.origin) return;
+
+  const live = /\/(app|auth|config|data)\.js$/;
+  if (live.test(url.pathname)) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(VERSION).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
 
   // App navigations → serve cached index (SPA shell) when offline.
   if (req.mode === 'navigate') {
