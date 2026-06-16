@@ -65,7 +65,7 @@
   let state = {
     db: null, session: null, screen: 'inicio', memberId: 'm_joao', member: null,
     deferredPrompt: null, authPending: false,
-    authView: 'signin', pendingEmail: '', unconfirmedEmail: '',
+    authView: 'signin', loginPortal: 'student', pendingEmail: '', unconfirmedEmail: '',
   };
   let coachFilter = { q: '', seg: 'todos' };
   let rec = { mr: null, chunks: [], stream: null, timer: null, sec: 0, dataUrl: null };
@@ -303,6 +303,7 @@
     const segs = [['todos', 'Todos'], ['ativo', 'Ativos'], ['experimental', 'Exp.'], ['risco', 'Em risco']];
     let h = '<section class="screen">';
     h += '<div class="searchbar">' + icon('search', 18) + '<input id="q" placeholder="Buscar aluno..." value="' + esc(coachFilter.q) + '"></div>';
+    h += '<button class="btn full" data-act="add-student" style="margin-bottom:14px">' + icon('plus', 17) + ' Adicionar aluno</button>';
     h += '<div class="seg-ctl">' + segs.map((s) => '<button class="' + (coachFilter.seg === s[0] ? 'on' : '') + '" data-act="seg:' + s[0] + '">' + s[1] + '</button>').join('') + '</div>';
     h += '<div class="roster" id="rosterlist">' + rosterHtml(all) + '</div></section>';
     return h;
@@ -353,6 +354,12 @@
 
     h += '<div class="quickrow"><button class="btn gold" data-act="awardfor:' + m.id + '">' + icon('award', 16) + ' Dar selo</button>' +
       '<button class="btn sec" data-act="present:' + m.id + '">' + icon('check', 16) + ' Marcar presença</button></div>';
+    if (m.phone) {
+      h += '<div class="card" style="margin-top:12px;font-size:13px;color:var(--muted)">' +
+        icon('message-circle', 14) + ' <b style="color:var(--text)">' + esc(m.phone) + '</b>' +
+        ' · E-mail ' + (m.marketing_email !== false ? '✓' : '✗') +
+        ' · WhatsApp ' + (m.marketing_whatsapp !== false ? '✓' : '✗') + '</div>';
+    }
     h += '<button class="btn risk full" data-act="wa:' + m.id + '" style="margin-top:10px">' + icon('message-circle', 16) + ' Mensagem no WhatsApp</button>';
 
     h += '<div class="eyebrow">' + icon('clock', 13) + ' Presenças recentes</div><div class="card attn">';
@@ -430,11 +437,7 @@
   async function render() {
     renderChrome();
     const view = $('#view');
-    if (!state.session) {
-      view.innerHTML = viewLogin();
-      renderChrome();
-      return;
-    }
+    if (!state.session || needsAuthScreen()) { view.innerHTML = viewLogin(); renderChrome(); return; }
     if (state.session.role === 'member') state.member = await state.db.getMember(state.memberId);
     let html = '';
     try {
@@ -466,7 +469,22 @@
       if (q) q.addEventListener('input', (e) => { coachFilter.q = e.target.value; const l = $('#rosterlist'); if (l) state.db.listMembers().then((all) => { l.innerHTML = rosterHtml(all); }); });
     }
     if (state.screen === 'postar') bindPostar();
-    if (!state.session) bindAuthForm();
+    if (needsAuthScreen()) bindAuthForm();
+  }
+
+  function needsAuthScreen() {
+    if (!authEnabled()) return !state.session;
+    if (A.auth.recoveryMode) return true;
+    if (A.auth.inviteMode && A.auth.session) return true;
+    if (state.authView === 'pending-link') return true;
+    if (['confirm-sent', 'reset-sent', 'confirm-required', 'forgot'].includes(state.authView)) return true;
+    if (state.authView === 'signup' && A.auth.inviteData) return true;
+    return !state.session;
+  }
+
+  function marketingChecks(prefix) {
+    return '<label class="checkrow"><input type="checkbox" name="mkwa" checked> Avisos no WhatsApp (treinos, cobrança)</label>' +
+      '<label class="checkrow"><input type="checkbox" name="mkem" checked> Novidades por e-mail</label>';
   }
 
   function bindAuthForm() {
@@ -474,15 +492,18 @@
     const signup = $('#signupform');
     const forgot = $('#forgotform');
     const recovery = $('#recoveryform');
+    const inviteComplete = $('#invitecompleteform');
+    const addStu = $('#addstudentform');
 
     if (signin) {
       signin.addEventListener('submit', async (e) => {
         e.preventDefault();
         state.authPending = true;
         render();
+        const expect = state.loginPortal === 'coach' ? 'coach' : 'member';
         try {
-          await A.auth.signInPassword(signin.email.value, signin.password.value);
-          toast('Bem-vindo de volta!', 'check');
+          await A.auth.signInPassword(signin.email.value, signin.password.value, expect);
+          toast(expect === 'coach' ? 'Bem-vindo, professor!' : 'Bem-vindo de volta!', 'check');
         } catch (err) {
           if (err.code === 'email_not_confirmed') {
             state.unconfirmedEmail = err.email || signin.email.value.trim();
@@ -500,19 +521,51 @@
     if (signup) {
       signup.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const inv = A.auth.inviteData;
+        if (!inv || !inv.valid) { toast('Convite inválido ou expirado', 'alert'); return; }
         const pw = signup.password.value;
-        const pw2 = signup.password2.value;
         if (pw.length < 6) { toast('Senha: mínimo 6 caracteres', 'alert'); return; }
-        if (pw !== pw2) { toast('As senhas não coincidem', 'alert'); return; }
         state.authPending = true;
         render();
         try {
-          state.pendingEmail = signup.email.value.trim();
-          await A.auth.signUp(state.pendingEmail, pw);
+          const phone = U.normalizePhone(signup.phone.value);
+          await A.auth.signUpInvite({
+            email: inv.email,
+            password: pw,
+            member_id: inv.member_id,
+            name: inv.name,
+            phone,
+            marketing_email: signup.mkem.checked,
+            marketing_whatsapp: signup.mkwa.checked,
+          });
+          state.pendingEmail = inv.email;
           state.authView = 'confirm-sent';
           toast('Conta criada! Confirme seu e-mail', 'mail');
         } catch (err) {
           toast(err.message || 'Erro ao criar conta', 'alert');
+        } finally {
+          state.authPending = false;
+          render();
+        }
+      });
+    }
+
+    if (inviteComplete) {
+      inviteComplete.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pw = inviteComplete.password.value;
+        if (pw.length < 6) { toast('Senha: mínimo 6 caracteres', 'alert'); return; }
+        state.authPending = true;
+        render();
+        try {
+          await A.auth.completeInvitePassword(pw, {
+            phone: U.normalizePhone(inviteComplete.phone.value),
+            marketing_email: inviteComplete.mkem.checked,
+            marketing_whatsapp: inviteComplete.mkwa.checked,
+          });
+          toast('Conta pronta! Bem-vindo 🥋', 'check');
+        } catch (err) {
+          toast(err.message || 'Erro ao salvar', 'alert');
         } finally {
           state.authPending = false;
           render();
@@ -559,6 +612,35 @@
         }
       });
     }
+
+    if (addStu) {
+      addStu.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        state.authPending = true;
+        try {
+          const r = await state.db.inviteStudent({
+            name: addStu.name.value.trim(),
+            email: addStu.email.value.trim(),
+            phone: addStu.phone.value.trim(),
+            belt: addStu.belt.value,
+          });
+          closeSheet();
+          toast(r.emailSent ? 'Convite enviado por e-mail!' : 'Aluno criado (envie o link)', 'mail');
+          if (r.whatsappText) {
+            openSheet('<h3>Convite pronto</h3><div class="sub">E-mail ' + (r.emailSent ? 'enviado' : 'não enviado — copie o link') + '</div>' +
+              '<p class="authtxt" style="word-break:break-all">' + esc(r.inviteLink) + '</p>' +
+              '<a class="btn full" href="' + esc(waLink({ phone: addStu.phone.value }, r.whatsappText)) + '" target="_blank" rel="noopener">' +
+              icon('message-circle', 17) + ' Enviar no WhatsApp</a>' +
+              '<button class="btn sec full" data-act="nav:alunos" style="margin-top:10px">Ver alunos</button>');
+          }
+          render();
+        } catch (err) {
+          toast(err.message || 'Erro ao convidar', 'alert');
+        } finally {
+          state.authPending = false;
+        }
+      });
+    }
   }
 
   function authEnabled() { return A.auth && A.auth.isEnabled && A.auth.isEnabled(); }
@@ -574,6 +656,13 @@
 
   function authField(label, input) {
     return '<label class="authlabel">' + label + '</label>' + input;
+  }
+
+  function portalTabs() {
+    const stu = state.loginPortal !== 'coach';
+    return '<div class="portal">' +
+      '<button type="button" class="portalbtn ' + (stu ? 'on' : '') + '" data-act="portal:student">' + icon('user', 16) + ' Aluno</button>' +
+      '<button type="button" class="portalbtn ' + (!stu ? 'on' : '') + '" data-act="portal:coach">' + icon('crown', 16) + ' Professor</button></div>';
   }
 
   function viewLogin() {
@@ -593,67 +682,99 @@
         icon('key-round', 17) + ' Salvar nova senha</button></form>');
     }
 
+    if (A.auth.inviteMode && A.auth.session && !A.auth.recoveryMode) {
+      const inv = A.auth.inviteData || {};
+      const ph = inv.phone || (A.auth.session.user.user_metadata && A.auth.session.user.user_metadata.phone) || '';
+      return authShell('Quase lá, ' + esc(firstName(inv.name || 'atleta')) + '!',
+        '<p class="authtxt" style="margin-bottom:14px">Crie sua senha para entrar no app da academia.</p>' +
+        '<form id="invitecompleteform" class="authcard">' +
+        authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(ph) + '" placeholder="(13) 99999-9999">') +
+        authField('Sua senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
+        marketingChecks() +
+        '<button class="btn full" type="submit">' + icon('check', 17) + ' Entrar no app</button></form>');
+    }
+
     if (state.authView === 'confirm-sent' || state.authView === 'reset-sent') {
       const isReset = state.authView === 'reset-sent';
-      return authShell(null,
+      return authShell(null, portalTabs() +
         '<div class="authcard"><div class="authicon">' + icon('mail', 28) + '</div>' +
         '<h2>' + (isReset ? 'Link enviado' : 'Confirme seu e-mail') + '</h2>' +
         '<p class="authtxt">' + (isReset
-          ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>. Abra-o para redefinir sua senha.'
-          : 'Enviamos um link de confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique nele e depois entre com sua senha.') +
+          ? 'Enviamos um link para <b>' + esc(state.pendingEmail) + '</b>.'
+          : 'Enviamos confirmação para <b>' + esc(state.pendingEmail) + '</b>. Clique no link e depois entre com sua senha.') +
         '</p><button class="btn sec full" data-act="auth-signin">' + icon('chevron-left', 16) + ' Voltar ao login</button></div>');
     }
 
     if (state.authView === 'confirm-required') {
       const em = state.unconfirmedEmail || state.pendingEmail;
-      return authShell(null,
+      return authShell(null, portalTabs() +
         '<div class="authcard"><div class="authicon">' + icon('alert', 28) + '</div>' +
         '<h2>E-mail não confirmado</h2>' +
-        '<p class="authtxt">Confirme <b>' + esc(em) + '</b> antes de entrar. Verifique spam/lixo eletrônico.</p>' +
+        '<p class="authtxt">Confirme <b>' + esc(em) + '</b> antes de entrar.</p>' +
         '<button class="btn full" data-act="auth-resend" style="margin-top:14px">' + icon('mail', 17) + ' Reenviar confirmação</button>' +
-        '<button class="btn sec full" data-act="auth-signin" style="margin-top:10px">' + icon('chevron-left', 16) + ' Voltar</button></div>');
+        '<button class="btn sec full" data-act="auth-signin" style="margin-top:10px">Voltar</button></div>');
     }
 
     if (state.authView === 'pending-link') {
-      return authShell(null,
-        '<div class="authcard"><div class="authicon">' + icon('user', 28) + '</div>' +
-        '<h2>Conta confirmada</h2>' +
-        '<p class="authtxt">Seu e-mail está ok. O professor ainda precisa vincular seu perfil de aluno na academia — avise no tatame.</p>' +
+      return authShell(null, portalTabs() +
+        '<div class="authcard"><div class="authicon">' + icon('alert', 28) + '</div>' +
+        '<h2>Perfil pendente</h2>' +
+        '<p class="authtxt">Conta ok, mas falta vínculo com a academia. Fale com o professor.</p>' +
         '<button class="btn sec full" data-act="logout" style="margin-top:14px">' + icon('log-out', 17) + ' Sair</button></div>');
     }
 
     if (state.authView === 'forgot') {
-      return authShell('Recuperar senha',
+      return authShell('Recuperar senha', portalTabs() +
         '<form id="forgotform" class="authcard">' +
         authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
-        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
-        icon('mail', 17) + ' Enviar link</button>' +
+        '<button class="btn full" type="submit">' + icon('mail', 17) + ' Enviar link</button>' +
         '<button type="button" class="authlink" data-act="auth-signin">Voltar ao login</button></form>');
     }
 
-    const isSignup = state.authView === 'signup';
-    const tabs = '<div class="authtabs">' +
-      '<button type="button" class="authtab ' + (isSignup ? '' : 'on') + '" data-act="auth-signin">Entrar</button>' +
-      '<button type="button" class="authtab ' + (isSignup ? 'on' : '') + '" data-act="auth-signup">Criar conta</button></div>';
+    const isCoach = state.loginPortal === 'coach';
+    const inv = A.auth.inviteData;
 
-    if (isSignup) {
-      return authShell('Junte-se à academia', tabs +
+    if (!isCoach && (state.authView === 'signup' || inv) && inv && inv.valid) {
+      return authShell('Bem-vindo à Arcore', portalTabs() +
+        '<p class="authtxt" style="margin-bottom:12px">Oi <b>' + esc(firstName(inv.name)) + '</b>! Crie sua senha — leva 30 segundos.</p>' +
         '<form id="signupform" class="authcard">' +
-        authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
-        authField('Senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
-        authField('Confirmar senha', '<input class="input" name="password2" type="password" required minlength="6" autocomplete="new-password" placeholder="Repita a senha">') +
-        '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
-        icon('user', 17) + ' ' + (state.authPending ? 'Criando...' : 'Criar conta') + '</button>' +
-        '<p class="authtxt">Você receberá um e-mail de confirmação antes de entrar.</p></form>');
+        authField('E-mail', '<input class="input" name="email" type="email" readonly value="' + esc(inv.email) + '">') +
+        authField('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" value="' + esc(inv.phone || '') + '" placeholder="(13) 99999-9999">') +
+        authField('Crie sua senha', '<input class="input" name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">') +
+        marketingChecks() +
+        '<button class="btn full" type="submit">' + icon('user', 17) + ' Criar minha conta</button>' +
+        '<p class="authtxt">Depois confirme o e-mail que vamos mandar.</p></form>');
     }
 
-    return authShell('Entrar na academia', tabs +
+    if (isCoach) {
+      return authShell('Área do professor', portalTabs() +
+        '<form id="signinform" class="authcard">' +
+        authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="professor@academia.com">') +
+        authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
+        '<button class="btn gold full" type="submit">' + icon('crown', 17) + ' Entrar como professor</button>' +
+        '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>');
+    }
+
+    return authShell('Entrar', portalTabs() +
       '<form id="signinform" class="authcard">' +
-      authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="email" placeholder="voce@email.com">') +
+      authField('E-mail', '<input class="input" name="email" type="email" required autocomplete="username" placeholder="voce@email.com">') +
       authField('Senha', '<input class="input" name="password" type="password" required autocomplete="current-password" placeholder="Sua senha">') +
-      '<button class="btn full" type="submit" ' + (state.authPending ? 'disabled' : '') + '>' +
-      icon('lock', 17) + ' ' + (state.authPending ? 'Entrando...' : 'Entrar') + '</button>' +
-      '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>');
+      '<button class="btn full" type="submit">' + icon('lock', 17) + ' Entrar</button>' +
+      '<button type="button" class="authlink" data-act="auth-forgot">Esqueci minha senha</button></form>' +
+      '<div class="authcard" style="margin-top:12px;padding:16px"><p class="authtxt" style="margin:0">' +
+      icon('mail', 14) + ' <b>Primeira vez?</b> Peça ao professor um convite por e-mail. Você recebe um link para criar sua senha.</p></div>');
+  }
+
+  function openAddStudentSheet() {
+    const belts = BELT_ORDER.map((b) => '<option value="' + b + '">' + (U.belt[b].label) + '</option>').join('');
+    openSheet('<h3>Adicionar aluno</h3><div class="sub">E-mail de convite + celular para WhatsApp</div>' +
+      '<form id="addstudentform">' +
+      field('Nome completo', '<input class="input" name="name" required placeholder="Ex.: João Silva">') +
+      field('E-mail', '<input class="input" name="email" type="email" required placeholder="aluno@email.com">') +
+      field('Celular (WhatsApp)', '<input class="input" name="phone" type="tel" required inputmode="tel" placeholder="(13) 99999-9999">') +
+      field('Faixa inicial', '<select class="input" name="belt">' + belts + '</select>') +
+      '<button class="btn full" type="submit">' + icon('send', 17) + ' Enviar convite</button></form>');
+    bindAuthForm();
   }
 
   /* =====================================================================
@@ -671,7 +792,9 @@
       case 'login-coach': await setSession('coach', null); break;
       case 'auth-signin': state.authView = 'signin'; state.unconfirmedEmail = ''; render(); break;
       case 'auth-signup': state.authView = 'signup'; render(); break;
+      case 'portal': state.loginPortal = arg; state.authView = 'signin'; render(); break;
       case 'auth-forgot': state.authView = 'forgot'; render(); break;
+      case 'add-student': openAddStudentSheet(); break;
       case 'auth-resend':
         try {
           await A.auth.resendConfirmation(state.unconfirmedEmail || state.pendingEmail);
@@ -914,7 +1037,10 @@
   async function applyAuthSession() {
     if (A.auth.recoveryMode) {
       state.session = null;
-      state.authView = 'recovery';
+      return false;
+    }
+    if (A.auth.inviteMode && A.auth.session) {
+      state.session = null;
       return false;
     }
     const user = A.auth.session && A.auth.session.user;
@@ -960,6 +1086,12 @@
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.deferredPrompt = e; if (state.screen === 'inicio') render(); });
 
     if (A.auth) await A.auth.init();
+
+    if (authEnabled() && A.auth.inviteToken) {
+      await A.auth.loadInvite(A.auth.inviteToken);
+      state.loginPortal = 'student';
+      state.authView = 'signup';
+    }
 
     if (authEnabled()) {
       A.auth.onChange(async () => {

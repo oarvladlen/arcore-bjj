@@ -16,7 +16,7 @@ if (!token) {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'arcore', 'supabase');
-const files = ['schema.sql', 'schema-auth.sql'];
+const files = ['schema.sql', 'schema-auth.sql', 'schema-invites.sql'];
 
 async function runQuery(sql) {
   const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {

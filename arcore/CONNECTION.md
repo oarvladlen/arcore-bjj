@@ -129,13 +129,38 @@ psql "postgresql://postgres@db.acoilxssyjmwmmbaoytp.supabase.co:5432/postgres" \
 
 ### Fluxo no app
 
-1. **Criar conta** — e-mail + senha → e-mail de confirmação  
-2. **Clicar no link** no e-mail → conta ativa  
-3. **Entrar** — e-mail + senha  
-4. **Aluno novo** — professor vincula `member_id` no `profiles` (ou convite com metadata)  
-5. **Esqueci senha** — link de redefinição por e-mail  
+**Professor**
+1. Aba **Professor** → e-mail + senha (conta criada no Supabase com `role: coach`)
+2. **Alunos → Adicionar aluno** → nome, e-mail, celular (WhatsApp)
+3. Aluno recebe e-mail de convite + professor pode enviar link no WhatsApp
 
-### Convidar professor / aluno com perfil pronto
+**Aluno (convite)**
+1. Clica no link do e-mail ou WhatsApp (`?invite=TOKEN`)
+2. Confirma celular → cria senha → aceita avisos WA/e-mail
+3. Confirma e-mail → entra no app
+
+**Serviço de e-mail:** Supabase Auth (grátis) ou SMTP customizado (Resend, SendGrid) para marketing em escala.
+
+### Criar conta do professor
+
+Dashboard → **Authentication → Users → Add user**:
+- Auto Confirm: **ON**
+- Metadata: `{ "role": "coach", "display_name": "Mestre Ricardo" }`
+
+Ou: `SUPABASE_SERVICE_ROLE_KEY=... node scripts/create-coach.mjs professor@academia.com Senha123`
+
+### Edge Function (convite por e-mail)
+
+Deploy once:
+
+```bash
+cd arcore
+supabase functions deploy invite-student --project-ref acoilxssyjmwmmbaoytp
+```
+
+Set secrets: `APP_URL=https://oarvladlen.github.io/arcore-bjj/`
+
+### Convidar aluno (legado manual)
 
 **Authentication → Users → Invite**, with metadata:
 

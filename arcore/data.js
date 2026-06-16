@@ -69,6 +69,12 @@ window.Arcore = window.Arcore || {};
       const safe = String(url).replace(/"/g, '%22');
       return '<a class="vidlink" href="' + safe + '" target="_blank" rel="noopener">Abrir vídeo ↗</a>';
     },
+    normalizePhone(phone) {
+      let d = String(phone || '').replace(/\D/g, '');
+      if (d.length >= 10 && d.length <= 11) d = '55' + d;
+      if (d && d.charAt(0) !== '+') return '+' + d;
+      return d ? (d.startsWith('+') ? d : '+' + d) : '';
+    },
     dataURLtoBlob(dataURL) {
       const [head, b64] = String(dataURL).split(',');
       const mime = (head.match(/data:(.*?);base64/) || [, 'application/octet-stream'])[1];
@@ -77,8 +83,6 @@ window.Arcore = window.Arcore || {};
       return new Blob([arr], { type: mime });
     },
   });
-
-  /* --------------------------- seed (demo) ------------------------------ */
   // short generated tone so the "ouvir recado" button makes sound in the demo
   const SAMPLE_VOICE = 'data:audio/wav;base64,UklGRiQFAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAFAAAAACAAdwDnAEcBbAE5AZ8Arv+J/mr9kfw7/JD8mv1A/0UBVQMMBQ0GFgYKBf8COwAt/Vj6RPhe9+X33fkJ/e4A7gRYCIkKDwu5CacGRwJI/Xv4tvSr8sryJ/V3+RT/GAWDCmMO/w/6DmMLvgXr/gP4MvJ97pftwO+49L77twNUC0oRixR0FPAQewoTAhX5+vAo66fo/OkI7w33xgCgCvYSWBh8GW4WsA9dBv/7SfLU6tvmBedL6/nyy/wkB1EQzxaMGRUYqRIqCgAA1vVX7evndOYx6a/v3Pg1AwcNtRT7GCUZLBW3DQEEo/lQ8JLphOao583sGvUz/2wJGRLNF5YZKRftEOkHmP2r88brNee45mPqnfE1+5UFCw8IFmUZlRi5E58LmwFV93ruguhn5oLoeu5V95sBnwu5E5UYZRkIFgsPlQU1+53xY+q45jXnxuur85j96QftECkXlhnNFxkSbAkz/xr1zeyo54TmkulQ8KP5AQS3DSwVJRn7GLUUBw01A9z4r+8x6XTm6+dX7db1AAAqCqkSFRiMGc8WURAkB8v8+fJL6wXn2+bU6kny//tdBrAPbhZ8GVgYMxPmCs0AlPbn7TPoaubX6BPvF/hoAlUMOhTLGEgZnRVjDssEa/r18Pjpm+Zr50fsYfRl/qsIhhF+F5kZfheGEasIZf5h9Efsa+eb5vjp9fBr+ssEYw6dFUgZyxg6FFUMaAIX+BPv1+hq5jPo5+2U9s0A5gozE1gYfBluFrAPXQb/+0ny1Orb5gXnS+v58sv8JAdREM8WjBkVGKkSKgoAANb1V+3r53TmMemv79z4NQMHDbUU+xglGSwVtw0BBKP5UPCS6YTmqOfN7Br1M/9sCRkSzReWGSkX7RDpB5j9q/PG6zXnuOZj6p3xNfuVBQsPCBZlGZUYuROfC5sBVfd67oLoZ+aC6HruVfebAZ8LuROVGGUZCBYLD5UFNfud8WPquOY158brq/OY/ekH7RApF5YZzRcZEmwJM/8a9c3sqOeE5pLpUPCj+QEEtw0sFSUZ+xi1FAcNNQPc+K/vMel05uvnV+3W9QAAKgqpEhUYjBnPFlEQJAfL/PnyS+sF59vm1OpJ8v/7XQawD24WfBlYGDMT5grNAJT25+0z6Grm1+gT7xf4aAJVDDoUyxhIGZ0VYw7LBGv69fD46Zvma+dH7GH0Zf6rCIYRfheZGX4XhhGrCGX+YfRH7Gvnm+b46fXwa/rLBGMOnRVIGcsYOhRVDGgCF/gT79foauYz6OftlPbNAOYKMxNYGFMZJxZlDzUGH/zN8sHrHeht6Jbs3vMJ/Y8G4w6rFP4WhhWPEPUIAAAr9+jvYetJ6sLsVvIR+qUCqwrTECQUHRTOEM0KIAMR+/Hz5u667L7tuPH392r/1QYCDfUQEhI2EL4LcAVc/q33evKT72nv9PG99vL8hgNnCaINjg/nDtUL5gbxAPb67fWk8prx7/Jd9kn73QAsBloKwAwEDScLhQfBAqr9FPm89Sb0ifTG9nT67/51A0wH2Am2CtEJWgfEA6//x/uu+N/2m/bf92r6xv1gAaEEAwcsCPYHeAb9A/YA5/1Q+5b5+viH+Rr7Zv0AAHoCbgSRBb8F/QR3A3kBXP96/R78efua+278xv1g//QAQQIVA1gDCwNHAjkBFQAP/07+6/3s/UT+1/6C/yIAnQDiAO4AygCKAEUADwD4/w==';
 
@@ -333,6 +337,22 @@ window.Arcore = window.Arcore || {};
     const m = this.S.members.find((x) => x.id === memberId); if (!m) return null;
     m.winback_contacted_at = util.nowISO(); await this._save(); return decorateMember(m);
   };
+  LocalDB.prototype.getInvitePublic = async function () { return null; };
+  LocalDB.prototype.acceptInvitation = async function () { return { ok: true }; };
+  LocalDB.prototype.inviteStudent = async function (p) {
+    const id = util.uid('m');
+    const member = {
+      id, name: p.name, belt: p.belt || 'branca', stripes: 0, status: 'experimental',
+      email: p.email, phone: util.normalizePhone(p.phone), avatar: p.name.charAt(0).toUpperCase(),
+      marketing_email: true, marketing_whatsapp: true,
+      joined_at: util.nowISO(), last_class_at: null,
+      total_classes: 0, mat_hours: 0, classes_since_stripe: 0, xp: 0, week_xp: 0,
+      league: 'roxa', silent_mode: false, best_streak: 0, streak_weeks: 0, winback_contacted_at: null,
+    };
+    this.S.members.push(member);
+    await this._save();
+    return { ok: true, memberId: id, inviteLink: '?invite=demo', emailSent: false, whatsappText: 'Demo invite' };
+  };
 
   /* ---------------------------- SupabaseDB ------------------------------ */
   /* Mesma interface, sobre o cliente supabase-js. Ativada quando há chaves.
@@ -465,6 +485,23 @@ window.Arcore = window.Arcore || {};
       .sort((a, b) => b.days - a.days);
   };
   SB.markWinBack = async function (memberId) { return this.updateMember(memberId, { winback_contacted_at: util.nowISO() }); };
+
+  SB.getInvitePublic = async function (token) {
+    const { data, error } = await this.sb.rpc('get_invite_public', { p_token: token });
+    if (error) throw error;
+    return data;
+  };
+  SB.acceptInvitation = async function (token) {
+    const { data, error } = await this.sb.rpc('accept_invitation', { p_token: token });
+    if (error) throw error;
+    return data;
+  };
+  SB.inviteStudent = async function (payload) {
+    const { data, error } = await this.sb.functions.invoke('invite-student', { body: payload });
+    if (error) throw error;
+    if (data && data.error) throw new Error(data.error);
+    return data;
+  };
 
   /* ----------------------------- factory -------------------------------- */
   function loadScript(src) {
