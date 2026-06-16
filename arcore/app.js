@@ -437,7 +437,12 @@
   async function render() {
     renderChrome();
     const view = $('#view');
-    if (!state.session || needsAuthScreen()) { view.innerHTML = viewLogin(); renderChrome(); return; }
+    if (!state.session || needsAuthScreen()) {
+      view.innerHTML = viewLogin();
+      renderChrome();
+      bindAuthForm();
+      return;
+    }
     if (state.session.role === 'member') state.member = await state.db.getMember(state.memberId);
     let html = '';
     try {
@@ -615,7 +620,12 @@
           state.authView = 'reset-sent';
           toast('Link de redefinição enviado', 'mail');
         } catch (err) {
-          toast(err.message || 'Erro ao enviar', 'alert');
+          const msg = (err.message || '').toLowerCase();
+          if (msg.includes('429') || msg.includes('rate') || msg.includes('too many')) {
+            toast('Muitas tentativas. Aguarde alguns minutos e tente de novo.', 'alert');
+          } else {
+            toast(err.message || 'Erro ao enviar', 'alert');
+          }
         } finally {
           state.authPending = false;
           render();
@@ -716,7 +726,7 @@
     }
   }
 
-  function authFormOpen() { return ' method="post" action="#"'; }
+  function authFormOpen() { return ''; }
 
   async function tryCoachAutoLogin() {
     if (!authEnabled() || !state.coachGatePass) return;
@@ -1191,6 +1201,10 @@
   }
 
   async function boot() {
+    document.addEventListener('submit', (e) => {
+      const id = e.target && e.target.id;
+      if (id && /^(signin|forgot|signup|recovery|coachpass|invitecomplete)form$/.test(id)) e.preventDefault();
+    }, true);
     document.addEventListener('click', (e) => { onClick(e).catch((err) => console.error(err)); });
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.deferredPrompt = e; if (state.screen === 'inicio') render(); });
 

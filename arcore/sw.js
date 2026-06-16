@@ -1,5 +1,5 @@
 /* Arcore service worker — offline app shell */
-const VERSION = 'arcore-v10';
+const VERSION = 'arcore-v13';
 const SHELL = [
   './',
   './index.html',
