@@ -44,6 +44,8 @@ window.Arcore = window.Arcore || {};
     beltColor(b) { const v = (util.belt[b] || util.belt.branca).varc; return 'var(' + v + ')'; },
     risk(member) {
       if (!member || member.status === 'inativo') return false;
+      // Never trained yet = new student in onboarding, not a lapsed "at-risk".
+      if (!member.last_class_at) return false;
       return util.daysSince(member.last_class_at) >= R.atRiskDays;
     },
     stripe(member) {
@@ -479,7 +481,7 @@ window.Arcore = window.Arcore || {};
       marketing_email: true, marketing_whatsapp: true,
       joined_at: util.nowISO(), last_class_at: null,
       total_classes: 0, mat_hours: 0, classes_since_stripe: 0, xp: 0, week_xp: 0,
-      league: 'roxa', silent_mode: false, best_streak: 0, streak_weeks: 0, winback_contacted_at: null,
+      league: p.belt || 'branca', silent_mode: false, best_streak: 0, streak_weeks: 0, winback_contacted_at: null,
     };
     this.S.members.push(member);
     await this._save();

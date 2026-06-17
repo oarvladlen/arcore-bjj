@@ -50,6 +50,7 @@ Deno.serve(async (req) => {
       stripes: 0,
       status: 'experimental',
       avatar,
+      league: belt,
       marketing_email: true,
       marketing_whatsapp: true,
     });

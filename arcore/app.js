@@ -116,11 +116,18 @@
       '<button class="barx" data-act="push-dismiss" aria-label="Dispensar">' + icon('x', 15) + '</button></div>';
   }
   async function doPushEnable() {
+    closeSheet();
     const r = await A.push.enable();
     if (r.ok) toast('Notificações ativadas 🔔', 'bell');
     else if (r.reason === 'denied') toast('Permissão negada — ative nas configurações do navegador.', 'alert');
     else if (r.reason === 'unsupported') toast('Notificações não suportadas neste aparelho.', 'alert');
     else toast('Não foi possível ativar agora.', 'alert');
+    render();
+  }
+  async function doPushDisable() {
+    closeSheet();
+    await A.push.disable();
+    toast('Notificações desativadas', 'bell');
     render();
   }
 
@@ -269,7 +276,7 @@
   async function viewRanking() {
     const db = state.db, m = state.member;
     const board = await db.leaderboard();
-    const league = (U.belt[m.league] || U.belt.roxa).short.toUpperCase();
+    const league = (U.belt[m.belt] || U.belt.branca).short.toUpperCase();
     let h = '<section class="screen">';
     h += '<div class="eyebrow" style="margin-top:14px">' + icon('trophy', 13) + ' Liga semanal</div>';
     h += '<div class="league"><div class="ic">' + icon('crown', 24) + '</div><div><div class="t">LIGA ' + league + '</div>' +
@@ -362,7 +369,7 @@
       return '<button class="ritem" data-act="member:' + m.id + '">' +
         '<div class="av" style="background:' + m.beltColor + ';' + (m.belt === 'branca' ? 'color:#3a2e1c' : '') + '">' + esc(m.avatar) + '</div>' +
         '<div class="nm"><b>' + esc(m.name) + '</b><div class="meta"><span class="chip ' + chipCls + '">' + chipLab + '</span>' +
-        '<span>' + esc(m.beltShort) + ' · ' + m.stripes + 'º</span><span>treinou ' + U.fmtAgo(m.last_class_at) + '</span></div></div>' +
+        '<span>' + esc(m.beltShort) + ' · ' + m.stripes + 'º</span><span>' + (m.last_class_at ? 'treinou ' + U.fmtAgo(m.last_class_at) : 'ainda não treinou') + '</span></div></div>' +
         '<div class="go">' + icon('chevron-right', 18) + '</div></button>';
     }).join('');
   }
@@ -1067,6 +1074,8 @@
       case 'presslot': state.presSlot = arg; render(); break;
       case 'verify': await doVerify(arg); break;
       case 'push-enable': await doPushEnable(); break;
+      case 'push-disable': await doPushDisable(); break;
+      case 'push-blocked': closeSheet(); toast('Notificações bloqueadas no navegador. Ative nas configurações do site.', 'alert'); break;
       case 'push-dismiss': try { localStorage.setItem('arcore.push.dismiss', '1'); } catch (e) { /* ignore */ } render(); break;
       default: break;
     }
@@ -1279,6 +1288,13 @@
     if (!authEnabled()) {
       if (isCoach) h += '<button class="menuitem" data-act="switchto:member">' + icon('user', 20) + ' Ver como aluno</button>';
       else h += '<button class="menuitem" data-act="switchto:coach">' + icon('crown', 20) + ' Entrar como professor</button>';
+    }
+    // Notifications — available to BOTH aluno and professor.
+    if (A.push && A.push.available && A.push.available()) {
+      const perm = A.push.permission();
+      if (perm === 'granted') h += '<button class="menuitem" data-act="push-disable">' + icon('bell', 20) + ' Notificações ativas ✓</button>';
+      else if (perm === 'denied') h += '<button class="menuitem" data-act="push-blocked">' + icon('bell', 20) + ' Notificações bloqueadas</button>';
+      else h += '<button class="menuitem" data-act="push-enable">' + icon('bell', 20) + ' Ativar notificações</button>';
     }
     h += '<button class="menuitem" data-act="logout">' + icon('log-out', 20) + ' Sair</button>';
     if (A.mode !== 'supabase') h += '<button class="menuitem danger" data-act="resetdemo">' + icon('refresh', 20) + ' Reiniciar demonstração</button>';
