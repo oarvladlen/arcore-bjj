@@ -244,8 +244,16 @@ window.Arcore = window.Arcore || {};
       },
     });
     if (error) throw error;
-    if (data.session) await auth.tryAcceptInvite();
-    else if (auth.inviteToken) {
+    if (data.session) {
+      await auth.tryAcceptInvite();
+      // Account created + signed in (email confirmation off). Invite is consumed
+      // — clear the context so needsPasswordSetup() stops firing and the app
+      // logs them straight in (no redundant second password screen).
+      auth.inviteMode = false;
+      auth.inviteToken = null;
+      auth.inviteData = null;
+      try { sessionStorage.removeItem('arcore.invite'); } catch (e) { /* ignore */ }
+    } else if (auth.inviteToken) {
       try { sessionStorage.setItem('arcore.invite', auth.inviteToken); } catch (e) { /* ignore */ }
     }
     if (opts.member_id && data.session) {

@@ -659,7 +659,7 @@
         render();
         try {
           const phone = U.normalizePhone(signup.phone.value);
-          await A.auth.signUpInvite({
+          const data = await A.auth.signUpInvite({
             email: inv.email,
             password: pw,
             member_id: inv.member_id,
@@ -668,9 +668,22 @@
             marketing_email: signup.mkem.checked,
             marketing_whatsapp: signup.mkwa.checked,
           });
-          state.pendingEmail = inv.email;
-          state.authView = 'confirm-sent';
-          toast('Conta criada! Confirme seu e-mail', 'mail');
+          if (data && data.session) {
+            // Email confirmation off → account is live + signed in. Go straight in.
+            if (window.location.search.includes('invite=')) {
+              const u = new URL(window.location.href);
+              u.searchParams.delete('invite');
+              history.replaceState(null, '', u.pathname + u.search + u.hash);
+            }
+            const ok = await applyAuthSession();
+            if (ok) toast('Conta criada! Bem-vindo 🥋', 'check');
+            else { state.authView = 'signin'; state.pendingEmail = inv.email; toast('Conta criada! Entre com e-mail e senha.', 'check'); }
+          } else {
+            // Email confirmation on → must confirm by e-mail first.
+            state.pendingEmail = inv.email;
+            state.authView = 'confirm-sent';
+            toast('Conta criada! Confirme seu e-mail', 'mail');
+          }
         } catch (err) {
           const msg = (err.message || '').toLowerCase();
           if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('user already')) {

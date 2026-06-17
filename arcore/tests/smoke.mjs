@@ -102,6 +102,30 @@ group('auth.needsPasswordSetup — recovery vs invite (regression: invited_at)')
   eq('url #type=invite → password setup', A2.needsPasswordSetup(), true);
 }
 
+group('auth.signUpInvite — clears invite context on session (no double password)');
+{
+  const { ctx, win } = makeContext(baseCfg, loc('?invite=tok123'));
+  loadInto(ctx, 'auth.js');
+  const A = win.Arcore.auth;
+  // Fake Supabase client: signUp returns a session (email confirmation OFF).
+  A.client = {
+    auth: { signUp: async () => ({ data: { session: { user: { id: 'u1', email: 'a@b.com', user_metadata: {} } } }, error: null }) },
+    rpc: async () => ({ data: { ok: true, member_id: 'm_x' }, error: null }),
+    from: () => ({
+      select: () => ({ eq: () => ({ single: async () => ({ data: { id: 'u1', role: 'member', member_id: 'm_x', email: 'a@b.com' }, error: null }) }) }),
+      update: () => ({ eq: async () => ({ data: null, error: null }) }),
+    }),
+  };
+  A.inviteToken = 'tok123'; A.inviteMode = true; A.inviteData = { valid: true, email: 'a@b.com' };
+  const data = await A.signUpInvite({ email: 'a@b.com', password: 'secret1', member_id: 'm_x', name: 'A' });
+  ok('signUp returns a session', !!(data && data.session));
+  eq('inviteToken cleared after signup', A.inviteToken, null);
+  eq('inviteMode cleared after signup', A.inviteMode, false);
+  // session present + invite cleared ⇒ no password-setup form ⇒ logs straight in
+  A.session = { user: { id: 'u1', invited_at: '2026-01-01' } };
+  eq('no second password screen', A.needsPasswordSetup(), false);
+}
+
 group('auth.isEnabled / isCoach / getMemberId');
 {
   const { ctx, win } = makeContext(baseCfg, loc());
