@@ -216,6 +216,10 @@ group('util.stripe / risk / normalizePhone / video ids');
   ok('embedHtml youtube → iframe', U.embedHtml('https://youtu.be/2oVHEcyJhIM').includes('youtube-nocookie.com/embed/2oVHEcyJhIM'));
   ok('embedHtml unknown → link', U.embedHtml('https://example.com/v.mp4').includes('Abrir vídeo'));
   eq('beltOrder length', U.beltOrder.length, 5);
+  eq('planLabel mensal', U.planLabel('mensal'), 'Mensal');
+  eq('planLabel anual', U.planLabel('anual'), 'Anual');
+  eq('planLabel empty', U.planLabel(null), '—');
+  ok('todayDate is YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(U.todayDate()));
 }
 
 group('util.daySlots — fixed weekly schedule');

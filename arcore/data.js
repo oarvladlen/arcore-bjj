@@ -15,6 +15,10 @@ window.Arcore = window.Arcore || {};
   const util = (A.util = {
     uid(p) { return (p || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
     nowISO() { return new Date().toISOString(); },
+    todayDate() { return new Date().toISOString().slice(0, 10); },
+    planLabel(p) {
+      return ({ mensal: 'Mensal', trimestral: 'Trimestral', semestral: 'Semestral', anual: 'Anual', experimental: 'Experimental' }[p]) || (p ? p : '—');
+    },
     clone(x) { return x == null ? x : JSON.parse(JSON.stringify(x)); },
     daysSince(iso) {
       if (!iso) return 9999;
@@ -165,9 +169,11 @@ window.Arcore = window.Arcore || {};
         phone: '+55 13 9' + (8000 + Math.floor(Math.random() * 1999)) + '-' + (1000 + Math.floor(Math.random() * 8999)),
         avatar: ini, total_classes: total, mat_hours: hours,
         classes_since_stripe: Math.min(R.classesPerStripe, Math.round(R.classesPerStripe * (0.2 + Math.random() * 0.7))),
-        xp, week_xp, league: 'roxa', silent_mode: silent,
+        xp, week_xp, league: belt, silent_mode: silent,
         best_streak: 18, streak_weeks: status === 'experimental' ? 1 : Math.max(1, 12 - lastDays),
         winback_contacted_at: null,
+        enrolled_at: isoAgo(total * 3 + 20).slice(0, 10),
+        plan: status === 'experimental' ? 'experimental' : ['mensal', 'trimestral', 'semestral', 'anual'][total % 4],
       };
     }
 
@@ -222,7 +228,13 @@ window.Arcore = window.Arcore || {};
     // earned achievements per member (for the trophy grid)
     const earned = { m_joao: ['armlock_dia', 'coracao_leao', 'madrugadeiro', 'cem_aulas'] };
 
-    return { v: 1, members, badges, classes, posts, awards, goals, checkins, earned };
+    const payments = [
+      { id: 'pay1', member_id: 'm_joao', paid_at: isoAgo(5).slice(0, 10), amount: 180, method: 'pix', period: 'Mensal', status: 'pago', created_at: isoAgo(5) },
+      { id: 'pay2', member_id: 'm_joao', paid_at: isoAgo(35).slice(0, 10), amount: 180, method: 'pix', period: 'Mensal', status: 'pago', created_at: isoAgo(35) },
+      { id: 'pay3', member_id: 'm_pedro', paid_at: isoAgo(10).slice(0, 10), amount: 480, method: 'cartao', period: 'Trimestral', status: 'pago', created_at: isoAgo(10) },
+      { id: 'pay4', member_id: 'm_ana', paid_at: isoAgo(2).slice(0, 10), amount: 180, method: 'dinheiro', period: 'Mensal', status: 'pago', created_at: isoAgo(2) },
+    ];
+    return { v: 1, members, badges, classes, posts, awards, goals, checkins, earned, payments };
   }
 
   /* --------------- shared compute (used by both back-ends) -------------- */
@@ -471,6 +483,18 @@ window.Arcore = window.Arcore || {};
     const m = this.S.members.find((x) => x.id === memberId); if (!m) return null;
     m.winback_contacted_at = util.nowISO(); await this._save(); return decorateMember(m);
   };
+  LocalDB.prototype.listPayments = async function (memberId) {
+    return (this.S.payments || []).filter((p) => p.member_id === memberId)
+      .sort((a, b) => String(b.paid_at).localeCompare(String(a.paid_at))).map(util.clone);
+  };
+  LocalDB.prototype.addPayment = async function (memberId, p) {
+    this.S.payments = this.S.payments || [];
+    const row = { id: util.uid('pay'), member_id: memberId, paid_at: p.paid_at || util.todayDate(), amount: p.amount || 0, method: p.method || null, period: p.period || null, status: p.status || 'pago', note: p.note || null, created_at: util.nowISO() };
+    this.S.payments.unshift(row); await this._save(); return util.clone(row);
+  };
+  LocalDB.prototype.deletePayment = async function (id) {
+    this.S.payments = (this.S.payments || []).filter((p) => p.id !== id); await this._save(); return { ok: true };
+  };
   LocalDB.prototype.getInvitePublic = async function () { return null; };
   LocalDB.prototype.acceptInvitation = async function () { return { ok: true }; };
   LocalDB.prototype.inviteStudent = async function (p) {
@@ -482,6 +506,7 @@ window.Arcore = window.Arcore || {};
       joined_at: util.nowISO(), last_class_at: null,
       total_classes: 0, mat_hours: 0, classes_since_stripe: 0, xp: 0, week_xp: 0,
       league: p.belt || 'branca', silent_mode: false, best_streak: 0, streak_weeks: 0, winback_contacted_at: null,
+      enrolled_at: util.todayDate(), plan: 'experimental',
     };
     this.S.members.push(member);
     await this._save();
@@ -683,9 +708,28 @@ window.Arcore = window.Arcore || {};
     return data;
   };
   SB.leaderboard = async function () {
-    const { data } = await this.sb.from('members').select('*').eq('silent_mode', false).order('week_xp', { ascending: false });
-    return (data || []).map((m, i) => Object.assign(decorateMember(m), { pos: i + 1 }));
+    // Privacy-safe RPC: students can't read the members table, so this returns
+    // only first name / belt / stripes / week_xp / avatar for everyone.
+    const { data, error } = await this.sb.rpc('leaderboard');
+    if (error || !data) {
+      // fallback (coach can read members directly)
+      const { data: ms } = await this.sb.from('members').select('*').eq('silent_mode', false).order('week_xp', { ascending: false });
+      return (ms || []).map((m, i) => Object.assign(decorateMember(m), { pos: i + 1 }));
+    }
+    return data.map((m, i) => Object.assign(decorateMember(m), { pos: i + 1 }));
   };
+  SB.listPayments = async function (memberId) {
+    const { data } = await this.sb.from('payments').select('*').eq('member_id', memberId).order('paid_at', { ascending: false });
+    return data || [];
+  };
+  SB.addPayment = async function (memberId, p) {
+    const { data } = await this.sb.from('payments').insert({
+      member_id: memberId, paid_at: p.paid_at || util.todayDate(), amount: p.amount || 0,
+      method: p.method || null, period: p.period || null, status: p.status || 'pago', note: p.note || null,
+    }).select().single();
+    return data;
+  };
+  SB.deletePayment = async function (id) { await this.sb.from('payments').delete().eq('id', id); return { ok: true }; };
   SB.coachStats = async function () {
     const ms = await this.listMembers();
     const live = ms.filter((m) => m.status !== 'inativo');

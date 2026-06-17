@@ -378,6 +378,8 @@
     const db = state.db, m = await db.getMember(state.memberId);
     if (!m) return '<section class="screen"><div class="empty">Aluno não encontrado.</div></section>';
     const checks = await db.memberCheckins(m.id);
+    let payments = [];
+    try { payments = await db.listPayments(m.id); } catch (e) { payments = []; }
     const classes = await db.listClasses();
     const clsTitle = (id) => { const c = classes.find((x) => x.id === id); return c ? c.title : 'Aula'; };
     const st = U.stripe(m);
@@ -412,6 +414,25 @@
         ' · WhatsApp ' + (m.marketing_whatsapp !== false ? '✓' : '✗') + '</div>';
     }
     h += '<button class="btn risk full" data-act="wa:' + m.id + '" style="margin-top:10px">' + icon('message-circle', 16) + ' Mensagem no WhatsApp</button>';
+
+    // ----- matrícula & pagamentos -----
+    h += '<div class="eyebrow">' + icon('calendar', 13) + ' Matrícula & pagamentos</div>';
+    const enrolled = m.enrolled_at ? new Date(m.enrolled_at).toLocaleDateString('pt-BR') : '—';
+    const paid = payments.filter((p) => p.status !== 'pendente');
+    const lastPay = paid[0];
+    h += '<div class="card mship"><div class="mrow"><div><div class="k">Plano</div><div class="v">' + esc(U.planLabel(m.plan)) + '</div></div>' +
+      '<div><div class="k">Desde</div><div class="v">' + esc(enrolled) + '</div></div>' +
+      '<div><div class="k">Último pgto</div><div class="v">' + (lastPay ? new Date(lastPay.paid_at).toLocaleDateString('pt-BR') : '—') + '</div></div></div>' +
+      '<button class="btn sec sm full" data-act="editmship:' + m.id + '" style="margin-top:12px">' + icon('user', 15) + ' Editar matrícula</button></div>';
+    h += '<div class="paylist">';
+    h += payments.length ? payments.map((p) => '<div class="payrow ' + (p.status === 'pendente' ? 'pend' : '') + '">' +
+      '<div class="g"><b>R$ ' + (Number(p.amount) || 0).toFixed(2).replace('.', ',') + '</b>' +
+      '<div class="s">' + new Date(p.paid_at).toLocaleDateString('pt-BR') + (p.period ? ' · ' + esc(p.period) : '') + (p.method ? ' · ' + esc(p.method) : '') + '</div></div>' +
+      '<span class="pchip ' + (p.status === 'pendente' ? 'pend' : 'ok') + '">' + (p.status === 'pendente' ? 'Pendente' : 'Pago') + '</span>' +
+      '<button class="goaldel" data-act="delpay:' + p.id + '|' + m.id + '" aria-label="Remover">' + icon('x', 13) + '</button></div>').join('')
+      : '<div class="empty" style="padding:14px">Sem pagamentos registrados.</div>';
+    h += '</div>';
+    h += '<button class="btn full" data-act="addpay:' + m.id + '" style="margin-top:4px">' + icon('plus', 16) + ' Registrar pagamento</button>';
 
     h += '<div class="eyebrow">' + icon('clock', 13) + ' Presenças recentes</div><div class="card attn">';
     h += checks.length ? checks.slice(0, 8).map((c) => '<div class="a"><span class="dot"></span> <b>' + esc(clsTitle(c.class_id)) + '</b> · ' + U.fmtAgo(c.at) + '</div>').join('')
@@ -1073,6 +1094,9 @@
       case 'delgoal': await doDeleteGoal(arg); break;
       case 'presslot': state.presSlot = arg; render(); break;
       case 'verify': await doVerify(arg); break;
+      case 'editmship': openMshipSheet(arg); break;
+      case 'addpay': openPaymentSheet(arg); break;
+      case 'delpay': await doDeletePayment(arg); break;
       case 'push-enable': await doPushEnable(); break;
       case 'push-disable': await doPushDisable(); break;
       case 'push-blocked': closeSheet(); toast('Notificações bloqueadas no navegador. Ative nas configurações do site.', 'alert'); break;
@@ -1185,6 +1209,49 @@
     if (!confirm('Apagar esta técnica do feed?')) return;
     await state.db.deletePost(id);
     toast('Técnica apagada', 'check');
+    render();
+  }
+  async function openMshipSheet(memberId) {
+    const m = await state.db.getMember(memberId);
+    const plans = ['experimental', 'mensal', 'trimestral', 'semestral', 'anual'];
+    const opts = plans.map((p) => '<option value="' + p + '"' + (m.plan === p ? ' selected' : '') + '>' + U.planLabel(p) + '</option>').join('');
+    openSheet('<h3>Matrícula de ' + esc(firstName(m.name)) + '</h3><div class="sub">Plano e data da primeira matrícula</div>' +
+      '<form id="mshipform">' +
+      field('Plano', '<select class="input" name="plan">' + opts + '</select>') +
+      field('Matriculado desde', '<input class="input" name="enrolled_at" type="date" value="' + esc(m.enrolled_at ? String(m.enrolled_at).slice(0, 10) : U.todayDate ? U.todayDate() : '') + '">') +
+      '<button class="btn full" type="submit">' + icon('check', 16) + ' Salvar</button></form>');
+    $('#mshipform').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      await state.db.updateMember(memberId, { plan: f.plan.value, enrolled_at: f.enrolled_at.value || null });
+      closeSheet(); toast('Matrícula atualizada', 'check'); render();
+    });
+  }
+  async function openPaymentSheet(memberId) {
+    const m = await state.db.getMember(memberId);
+    openSheet('<h3>Registrar pagamento</h3><div class="sub">' + esc(firstName(m.name)) + ' · ' + esc(U.planLabel(m.plan)) + '</div>' +
+      '<form id="payform">' +
+      field('Valor (R$)', '<input class="input" name="amount" type="number" step="0.01" min="0" inputmode="decimal" required placeholder="180,00">') +
+      field('Data', '<input class="input" name="paid_at" type="date" value="' + (U.todayDate ? U.todayDate() : '') + '">') +
+      field('Referente a', '<input class="input" name="period" placeholder="Ex.: ' + esc(U.planLabel(m.plan)) + ' · Jun/2026">') +
+      field('Forma', '<select class="input" name="method"><option value="pix">Pix</option><option value="cartao">Cartão</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option></select>') +
+      field('Status', '<select class="input" name="status"><option value="pago">Pago</option><option value="pendente">Pendente</option></select>') +
+      '<button class="btn full" type="submit">' + icon('check', 16) + ' Registrar</button></form>');
+    $('#payform').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      await state.db.addPayment(memberId, {
+        amount: parseFloat(f.amount.value) || 0, paid_at: f.paid_at.value || U.todayDate(),
+        period: f.period.value.trim() || U.planLabel(m.plan), method: f.method.value, status: f.status.value,
+      });
+      closeSheet(); toast('Pagamento registrado 💪', 'check'); render();
+    });
+  }
+  async function doDeletePayment(arg) {
+    const [id] = arg.split('|');
+    if (!confirm('Remover este pagamento?')) return;
+    await state.db.deletePayment(id);
+    toast('Pagamento removido', 'check');
     render();
   }
   async function doGoalStep(arg, btn) {
