@@ -432,3 +432,17 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 .pchip{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:8px;border:1px solid var(--line2)}
 .pchip.ok{color:#9fd6a3;border-color:rgba(95,174,111,.4);background:rgba(95,174,111,.08)}
 .pchip.pend{color:#e7b86b;border-color:rgba(224,162,60,.4);background:rgba(224,162,60,.08)}
+
+/* training history */
+.histlist{padding:6px 8px;display:flex;flex-direction:column}
+.sess{display:flex;align-items:center;gap:11px;padding:10px 6px;border-bottom:1px solid var(--line)}
+.sess:last-child{border-bottom:none}
+.sess.no{opacity:.55}
+.sess .dot{width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none}
+.sess.no .dot{background:var(--faint)}
+.sess .g{flex:1;min-width:0}
+.sess .g b{font-size:13.5px;display:block}
+.sess .g .s{color:var(--muted);font-size:11.5px;margin-top:1px}
+.vchip{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:3px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:3px;flex:none}
+.vchip.ok{color:#9fd6a3;background:rgba(95,174,111,.14)}
+.vchip.no{color:#e7b86b;background:rgba(224,162,60,.14)}

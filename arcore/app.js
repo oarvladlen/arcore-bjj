@@ -221,9 +221,23 @@
       '<div class="seal ' + (mine ? '' : 'plain') + '">' + sealIcon + '</div><div class="txt">' + txt + '</div></div>';
   }
 
+  function historyHtml(checks, classes) {
+    if (!checks.length) return '<div class="empty">Nenhum treino registrado ainda.</div>';
+    const clsTitle = (id) => { const c = classes.find((x) => x.id === id); return c ? c.title : 'Treino'; };
+    return '<div class="card histlist">' + checks.map((c) => {
+      const d = new Date(c.at);
+      const date = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' });
+      const v = c.verified;
+      const badge = v === false ? '<span class="vchip no">ausente</span>'
+        : (v === true ? '<span class="vchip ok">' + icon('check', 12) + '</span>' : '');
+      return '<div class="sess' + (v === false ? ' no' : '') + '"><span class="dot"></span>' +
+        '<div class="g"><b>' + esc(clsTitle(c.class_id)) + '</b><div class="s">' + date + ' · ' + hourLabel(c.at) + '</div></div>' + badge + '</div>';
+    }).join('') + '</div>';
+  }
+
   async function viewProgresso() {
     const db = state.db, m = state.member;
-    const [goals, badges] = await Promise.all([db.listGoals(m.id), db.earnedBadges(m.id)]);
+    const [goals, badges, checks, classes] = await Promise.all([db.listGoals(m.id), db.earnedBadges(m.id), db.memberCheckins(m.id), db.listClasses()]);
     const idx = BELT_ORDER.indexOf(m.belt);
     const st = U.stripe(m);
 
@@ -257,7 +271,11 @@
     h += badges.map((b) => '<div class="tro ' + (b.earned ? 'earned' : 'lock') + '">' +
       (b.rarity === 'raro' || b.rarity === 'lendário' ? '<span class="rare">' + (b.rarity === 'lendário' ? 'LENDÁRIO' : 'RARO') + '</span>' : '') +
       '<div class="em">' + icon(b.earned ? b.icon : 'lock', b.earned ? 20 : 18) + '</div><div class="nm">' + esc(b.name) + '</div></div>').join('');
-    h += '</div></section>';
+    h += '</div>';
+
+    h += '<div class="eyebrow">' + icon('clock', 13) + ' Histórico de treinos<span class="more">' + checks.length + '</span></div>';
+    h += historyHtml(checks, classes);
+    h += '</section>';
     return h;
   }
   function stat(v, em, k) { return '<div class="stat"><div class="v">' + v + (em ? '<em>' + em + '</em>' : '') + '</div><div class="k">' + k + '</div></div>'; }
@@ -434,10 +452,9 @@
     h += '</div>';
     h += '<button class="btn full" data-act="addpay:' + m.id + '" style="margin-top:4px">' + icon('plus', 16) + ' Registrar pagamento</button>';
 
-    h += '<div class="eyebrow">' + icon('clock', 13) + ' Presenças recentes</div><div class="card attn">';
-    h += checks.length ? checks.slice(0, 8).map((c) => '<div class="a"><span class="dot"></span> <b>' + esc(clsTitle(c.class_id)) + '</b> · ' + U.fmtAgo(c.at) + '</div>').join('')
-      : '<div class="empty">Sem presenças registradas.</div>';
-    h += '</div></section>';
+    h += '<div class="eyebrow">' + icon('clock', 13) + ' Histórico de treinos<span class="more">' + checks.length + '</span></div>';
+    h += historyHtml(checks, classes);
+    h += '</section>';
     return h;
   }
 
