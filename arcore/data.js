@@ -284,7 +284,7 @@ window.Arcore = window.Arcore || {};
     if (slots.length && !this.S.checkins.some((ck) => slots.some((sl) => sl.id === ck.class_id))) {
       const demo = ['m_pedro', 'm_rafa', 'm_ana', 'm_lucas', 'm_bruna'];
       const slot = slots[slots.length - 1]; // last adult class of the day
-      demo.forEach((mid) => this.S.checkins.push({ id: util.uid('ck'), member_id: mid, class_id: slot.id, at: util.nowISO(), verified: null }));
+      demo.forEach((mid, i) => this.S.checkins.push({ id: util.uid('ck'), member_id: mid, class_id: slot.id, at: util.nowISO(), verified: i < 3 ? true : null }));
     }
     await this._save(); return this;
   };
@@ -466,6 +466,14 @@ window.Arcore = window.Arcore || {};
     return this.S.members.filter((m) => !m.silent_mode)
       .sort((a, b) => b.week_xp - a.week_xp)
       .map((m, i) => Object.assign(decorateMember(m), { pos: i + 1 }));
+  };
+  LocalDB.prototype.academyPulse = async function () {
+    const verified = (this.S.checkins || []).filter((c) => c.verified === true);
+    const weekStart = new Date(); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    return {
+      confirmed_today: verified.filter((c) => util.sameDay(c.at)).length,
+      confirmed_week: verified.filter((c) => new Date(c.at) >= weekStart).length,
+    };
   };
   LocalDB.prototype.coachStats = async function () {
     const ms = this.S.members.filter((m) => m.status !== 'inativo');
@@ -679,8 +687,24 @@ window.Arcore = window.Arcore || {};
   };
   SB.listBadges = async function () { const { data } = await this.sb.from('badges').select('*'); return data || []; };
   SB.listAwards = async function () {
-    const { data } = await this.sb.from('awards').select('*, members(name,avatar), badges(*)').order('at', { ascending: false });
-    return (data || []).map((a) => Object.assign({}, a, { member_name: a.members && a.members.name, member_avatar: a.members && a.members.avatar, badge: a.badges }));
+    // Privacy-safe RPC: students can't read other members' rows, so the join
+    // would return blank names. awards_feed() returns first name + badge.
+    const { data, error } = await this.sb.rpc('awards_feed');
+    if (!error && data) {
+      return data.map((a) => ({
+        id: a.id, member_id: a.member_id, by: a.by, at: a.at,
+        reactions: a.reactions, reacted_by: a.reacted_by || [],
+        member_name: a.name, member_avatar: a.avatar, belt: a.belt,
+        badge: { name: a.badge_name, icon: a.badge_icon },
+      }));
+    }
+    const { data: rows } = await this.sb.from('awards').select('*, members(name,avatar), badges(*)').order('at', { ascending: false });
+    return (rows || []).map((a) => Object.assign({}, a, { member_name: a.members && a.members.name, member_avatar: a.members && a.members.avatar, badge: a.badges }));
+  };
+  SB.academyPulse = async function () {
+    const { data } = await this.sb.rpc('academy_pulse');
+    const r = (data && data[0]) || {};
+    return { confirmed_today: r.confirmed_today || 0, confirmed_week: r.confirmed_week || 0 };
   };
   SB.awardBadge = async function (memberId, badgeId, by) {
     const { data } = await this.sb.from('awards').insert({ member_id: memberId, badge_id: badgeId, by: by || 'Professor', at: util.nowISO(), reactions: 0, reacted_by: [] }).select().single();

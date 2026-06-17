@@ -446,3 +446,9 @@ textarea.input{resize:vertical;min-height:84px;line-height:1.5}
 .vchip{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:3px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:3px;flex:none}
 .vchip.ok{color:#9fd6a3;background:rgba(95,174,111,.14)}
 .vchip.no{color:#e7b86b;background:rgba(224,162,60,.14)}
+
+/* academy pulse — confirmed-sessions counter in the mural */
+.pulse{display:flex;align-items:center;gap:9px;background:rgba(95,174,111,.1);border:1px solid rgba(95,174,111,.3);
+  border-radius:13px;padding:11px 13px;margin-bottom:12px;color:var(--text);font-size:12.5px}
+.pulse svg{color:#9fd6a3;flex:none}
+.pulse b{color:#9fd6a3}

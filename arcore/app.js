@@ -136,7 +136,7 @@
      ===================================================================== */
   async function viewInicio() {
     const db = state.db, m = state.member;
-    const [slots, posts, awards, saved] = await Promise.all([db.listTodayClasses(), db.listPosts(), db.listAwards(), db.listSaved(m.id)]);
+    const [slots, posts, awards, saved, pulse] = await Promise.all([db.listTodayClasses(), db.listPosts(), db.listAwards(), db.listSaved(m.id), db.academyPulse ? db.academyPulse() : Promise.resolve(null)]);
     const myChecks = await Promise.all(slots.map((s) => db.isCheckedInToday(m.id, s.id)));
     const st = U.stripe(m);
 
@@ -173,7 +173,12 @@
     h += posts.map((p) => techCard(p, saved.some((s) => s.id === p.id))).join('');
 
     h += '<div class="eyebrow">' + icon('award', 13) + ' Mural da academia</div>';
-    h += awards.map((a) => awardCard(a, m.id)).join('');
+    if (pulse && (pulse.confirmed_today || pulse.confirmed_week)) {
+      h += '<div class="pulse">' + icon('thumbs-up', 15) +
+        '<span><b>' + pulse.confirmed_today + '</b> treino(s) confirmado(s) hoje · <b>' + pulse.confirmed_week + '</b> nesta semana</span></div>';
+    }
+    h += awards.length ? awards.map((a) => awardCard(a, m.id)).join('')
+      : '<div class="empty">Os selos do professor aparecem aqui.</div>';
     h += '</section>';
     return h;
   }
